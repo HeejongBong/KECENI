@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "KECENI"
+version = "0.0.1"
+dependencies =[
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pandas",
+]
+authors = [
+  { name="Heejong Bong", email="hbong@umich.edu" },
+]
+description = "Kernel Estimation of Causal Effect under Network Interference"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/HeejongBong/KECENI"
+"Bug Tracker" = "https://github.com/HeejongBong/KECENI/issues"
