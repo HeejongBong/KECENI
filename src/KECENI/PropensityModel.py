@@ -49,8 +49,8 @@ class LinearIIDPropensityModel(PropensityModel):
 
     def fit(self, data):
         Zs = np.array([
-            self.summary(data.Xs[data.N1s[j]],
-                         data.G[np.ix_(data.N1s[j],data.N1s[j])])
+            self.summary(data.Xs[data.G.N1(j)],
+                         data.G.sub(data.G.N1(j)))
             for j in np.arange(data.n_node)])
 
         model_fit = self.model.fit(Zs, data.Ts)
@@ -72,10 +72,8 @@ class LinearIIDPropensityFit(PropensityFit):
         
     def predict(self, T_N1, X_N2, G_N2):
         n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
-        N1s = [np.concatenate([[j],np.nonzero(G_N2[j])[0]]) 
-               for j in np.arange(n2)]
         return np.prod([self.predict_i(
-            T_N1[...,j], X_N2[...,N1s[j],:], G_N2[np.ix_(N1s[j],N1s[j])]
+            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j))
         ) for j in np.arange(n1)], 0)
 
 
@@ -89,8 +87,8 @@ class LogisticIIDPropensityModel(PropensityModel):
 
     def fit(self, data):
         Zs = np.array([
-            self.summary(data.Xs[data.N1s[j]],
-                         data.G[np.ix_(data.N1s[j],data.N1s[j])])
+            self.summary(data.Xs[data.G.N1(j)],
+                         data.G.sub(data.G.N1(j)))
             for j in np.arange(data.n_node)])
         
         model_fit = self.model.fit(Zs, data.Ts)
@@ -111,10 +109,8 @@ class LogisticIIDPropensityFit(PropensityFit):
     
     def predict(self, T_N1, X_N2, G_N2):
         n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
-        N1s = [np.concatenate([[j],np.nonzero(G_N2[j])[0]]) 
-               for j in np.arange(n2)]
         return np.prod([self.predict_i(
-            T_N1[...,j], X_N2[...,N1s[j],:], G_N2[np.ix_(N1s[j],N1s[j])]
+            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j))
         ) for j in np.arange(n1)], 0)
 
 
@@ -145,20 +141,20 @@ class KernelIIDPropensityFit(PropensityFit):
 
         for iter_k in tqdm(range(n_cv), leave=leave_tqdm, desc='k', total=n_cv):
             k = ks_cv[iter_k]
-            N1k = self.data.N1s[k]
-            N2k = self.data.N2s[k]
+            N1k = self.data.G.N1(k)
+            N2k = self.data.G.N2(k)
             
-            mk = np.delete(np.arange(self.data.n_node), self.data.N2s[k])
+            mk = np.delete(np.arange(self.data.n_node), self.data.G.N2(k))
             
             data_mk = KECENI.Data(
                 self.data.Ys[mk], self.data.Ts[mk], 
-                self.data.Xs[mk], self.data.G[np.ix_(mk,mk)]
+                self.data.Xs[mk], self.data.G.sub(mk)
             )
             fit_mk = model.fit(data_mk)
         
             Ys_cv[:,iter_k] = fit_mk.predict(
                 self.data.Ts[k], self.data.Xs[N1k], 
-                self.data.G[np.ix_(N1k,N1k)], lamdas=lamdas
+                self.data.G.sub(N1k), lamdas=lamdas
             )
 
         return ks_cv, Ys_cv
@@ -173,31 +169,29 @@ class KernelIIDPropensityFit(PropensityFit):
         
         if n_process == 1:
             from itertools import starmap
-            Ys_cv = list(starmap(self.loo_cv_k, tqdm(
+            Ys_cv = list(tqdm(starmap(self.loo_cv_k,
                 ((k, lamdas, n_sample, 1, None, False) 
-                 for k in ks_cv),
-                total=len(ks_cv), leave=leave_tqdm, desc='j'
-            )))
+                 for k in ks_cv)
+            ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                Ys_cv = list(p.starmap(self.loo_cv_k, tqdm(
+                Ys_cv = list(tqdm(p.istarmap(self.loo_cv_k,
                     ((k, lamdas, n_sample, 1, None, False) 
-                     for k in ks_cv),
-                    total=len(ks_cv), leave=leave_tqdm, desc='j'
-                )))
+                     for k in ks_cv)
+                ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
 
         return ks_cv, np.array(Ys_cv).T
 
     def loo_cv_k(self, k, lamdas, n_sample=100, n_process=1, 
                  tqdm = None, leave_tqdm=False):
-        N1k = self.data.N1s[k]
-        N2k = self.data.N2s[k]
+        N1k = self.data.G.N1(k)
+        N2k = self.data.G.N2(k)
         mk = np.delete(np.arange(self.data.n_node), N2k)
         
         data_mk = KECENI.Data(
             self.data.Ys[mk], self.data.Ts[mk], 
-            self.data.Xs[mk], self.data.G[np.ix_(mk,mk)]
+            self.data.Xs[mk], self.data.G.sub(mk)
         )
         fit_mk = KernelIIDPropensityModel(
             self.delta
@@ -205,7 +199,7 @@ class KernelIIDPropensityFit(PropensityFit):
     
         return fit_mk.predict_i(
             self.data.Ts[k], self.data.Xs[N1k], 
-            self.data.G[np.ix_(N1k,N1k)], lamdas=lamdas
+            self.data.G.sub(N1k), lamdas=lamdas
         )
 
     def predict_i(self, T, X_N1, G_N1, lamdas):
@@ -215,8 +209,8 @@ class KernelIIDPropensityFit(PropensityFit):
             lamdas = np.array(lamdas)
         Ds = np.array(
             [self.delta(X_N1, G_N1, 
-                        self.data.Xs[self.data.N1s[i]],
-                        self.data.G[np.ix_(self.data.N1s[i],self.data.N1s[i])])
+                        self.data.Xs[self.data.G.N1(i)],
+                        self.data.G.sub(self.data.G.N1(i)))
              for i in np.arange(self.data.n_node)]
         ).T
         return np.abs(
@@ -230,9 +224,7 @@ class KernelIIDPropensityFit(PropensityFit):
     
     def predict(self, T_N1, X_N2, G_N2, lamdas=None):        
         n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
-        N1s = [np.concatenate([[j],np.nonzero(G_N2[j])[0]]) 
-               for j in np.arange(n2)]
         return np.prod([self.predict_i(
-            T_N1[...,j], X_N2[...,N1s[j],:], G_N2[np.ix_(N1s[j],N1s[j])],
+            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
             lamdas
         ) for j in np.arange(n1)], 0)

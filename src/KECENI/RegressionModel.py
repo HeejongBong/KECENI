@@ -49,9 +49,9 @@ class LinearRegressionModel(RegressionModel):
 
     def fit(self, data):
         Zs = np.array([
-            self.summary(data.Ts[data.N1s[j]],
-                         data.Xs[data.N2s[j]],
-                         data.G[np.ix_(data.N2s[j],data.N2s[j])])
+            self.summary(data.Ts[data.G.N1(j)],
+                         data.Xs[data.G.N2(j)],
+                         data.G.sub(data.G.N2(j)))
             for j in np.arange(data.n_node)])
 
         model_fit = self.model.fit(Zs, data.Ys)
@@ -78,9 +78,9 @@ class LogisticRegressionModel(RegressionModel):
 
     def fit(self, data):
         Zs = np.array([
-            self.summary(data.Ts[data.N1s[j]],
-                         data.Xs[data.N2s[j]],
-                         data.G[np.ix_(data.N2s[j],data.N2s[j])])
+            self.summary(data.Ts[data.G.N1(j)],
+                         data.Xs[data.G.N2(j)],
+                         data.G.sub(data.G.N2(j)))
             for j in np.arange(data.n_node)])
         
         model_fit = self.model.fit(Zs, data.Ys)
@@ -124,20 +124,20 @@ class KernelRegressionFit(RegressionFit):
 
         for iter_k in tqdm(range(n_cv), leave=leave_tqdm, desc='k', total=n_cv):
             k = ks_cv[iter_k]
-            N1k = self.data.N1s[k]
-            N2k = self.data.N2s[k]
+            N1k = self.data.G.N1(k)
+            N2k = self.data.G.N2(k)
             
-            mk = np.delete(np.arange(self.data.n_node), self.data.N2s[k])
+            mk = np.delete(np.arange(self.data.n_node), N2k)
             
             data_mk = KECENI.Data(
                 self.data.Ys[mk], self.data.Ts[mk], 
-                self.data.Xs[mk], self.data.G[np.ix_(mk,mk)]
+                self.data.Xs[mk], self.data.G.sub(mk)
             )
             fit_mk = model.fit(data_mk)
         
             Ys_cv[:,iter_k] = fit_mk.predict(
                 self.data.Ts[N1k], self.data.Xs[N2k], 
-                self.data.G[np.ix_(N2k,N2k)], lamdas=lamdas
+                self.data.G.sub(N2k), lamdas=lamdas
             )
 
         return ks_cv, Ys_cv
@@ -152,31 +152,29 @@ class KernelRegressionFit(RegressionFit):
         
         if n_process == 1:
             from itertools import starmap
-            Ys_cv = list(starmap(self.loo_cv_k, tqdm(
+            Ys_cv = list(tqdm(starmap(self.loo_cv_k,
                 ((k, lamdas, n_sample, 1, None, False) 
-                 for k in ks_cv),
-                total=len(ks_cv), leave=leave_tqdm, desc='j'
-            )))
+                 for k in ks_cv)     
+            ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                Ys_cv = list(p.starmap(self.loo_cv_k, tqdm(
+                Ys_cv = list(tqdm(p.istarmap(self.loo_cv_k,
                     ((k, lamdas, n_sample, 1, None, False) 
-                     for k in ks_cv),
-                    total=len(ks_cv), leave=leave_tqdm, desc='j'
-                )))
+                     for k in ks_cv)
+                ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
 
         return ks_cv, np.array(Ys_cv).T
 
     def loo_cv_k(self, k, lamdas, n_sample=100, n_process=1, 
                  tqdm = None, leave_tqdm=False):
-        N1k = self.data.N1s[k]
-        N2k = self.data.N2s[k]
+        N1k = self.data.G.N1(k)
+        N2k = self.data.G.N2(k)
         mk = np.delete(np.arange(self.data.n_node), N2k)
         
         data_mk = KECENI.Data(
             self.data.Ys[mk], self.data.Ts[mk], 
-            self.data.Xs[mk], self.data.G[np.ix_(mk,mk)]
+            self.data.Xs[mk], self.data.G.sub(mk)
         )
         fit_mk = KernelRegressionModel(
             self.delta
@@ -184,7 +182,7 @@ class KernelRegressionFit(RegressionFit):
     
         return fit_mk.predict(
             self.data.Ts[N1k], self.data.Xs[N2k], 
-            self.data.G[np.ix_(N2k,N2k)], lamdas=lamdas
+            self.data.G.sub(N2k), lamdas=lamdas
         )
 
     def predict(self, T_N1, X_N2, G_N2, lamdas=None):
@@ -194,9 +192,9 @@ class KernelRegressionFit(RegressionFit):
             lamdas = np.array(lamdas)
         Ds = np.array(
             [self.delta(T_N1, X_N2, G_N2, 
-                        self.data.Ts[self.data.N1s[i]],
-                        self.data.Xs[self.data.N2s[i]],
-                        self.data.G[np.ix_(self.data.N2s[i],self.data.N2s[i])])
+                        self.data.Ts[self.data.G.N1(i)],
+                        self.data.Xs[self.data.G.N2(i)],
+                        self.data.G.sub(self.data.G.N2(i)))
              for i in np.arange(self.data.n_node)]
         ).T
 

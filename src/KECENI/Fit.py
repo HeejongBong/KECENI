@@ -31,17 +31,12 @@ class Fit:
         if G0 is None:
             G0 = self.data.G
 
-        n_node0 = G0.shape[0]
-        N1i0 = np.concatenate([[i0], np.nonzero(G0[i0])[0]])
-        N2i0 = pd.unique(np.concatenate([
-            np.concatenate([[j], np.nonzero(G0[j])[0]])
-            for j in N1i0
-        ]))
-        T0_N1i0 = T0[N1i0]
+        N1i0 = G0.N1(i0)
+        N2i0 = G0.N2(i0)
         
-        T0s_N1i0 = np.repeat(T0_N1i0[None,:], n_sample, 0)
+        T0s_N1i0 = np.repeat(T0[None,N1i0], n_sample, 0)
         Xs_N2i0 = self.rX(n_sample, N2i0, G0)
-        mus_N2i0 = self.mu(T0s_N1i0, Xs_N2i0, G0[np.ix_(N2i0, N2i0)])
+        mus_N2i0 = self.mu(T0s_N1i0, Xs_N2i0, G0.sub(N2i0))
         
         if return_std:
             return np.mean(mus_N2i0), np.std(mus_N2i0)/np.sqrt(n_sample)
@@ -55,12 +50,9 @@ class Fit:
         
         if G0 is None:
             G0 = self.data.G
-        n_node0 = G0.shape[0]
-        N1i0 = np.concatenate([[i0], np.nonzero(G0[i0])[0]])
-        N2i0 = pd.unique(np.concatenate([
-            np.concatenate([[j], np.nonzero(G0[j])[0]])
-            for j in N1i0
-        ]))
+        
+        N1i0 = G0.N1(i0)
+        N2i0 = G0.N2(i0)
 
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
@@ -68,22 +60,20 @@ class Fit:
         
         T0_N1i0 = T0[N1i0]
         Xs_N2i0 = self.rX(n_sample, N2i0, G0)
-        G0_N2i0 = G0[np.ix_(N2i0,N2i0)]
+        G0_N2i0 = G0.sub(N2i0)
         if n_process == 1:
             from itertools import starmap
-            r = list(starmap(self.m_D, tqdm(
+            r = list(tqdm(starmap(self.m_D, 
                 ((j, T0_N1i0, Xs_N2i0, G0_N2i0, lamdas, n_sample) 
-                 for j in range(self.data.n_node)),
-                total=self.data.n_node, leave=leave_tqdm, desc='j'
-            )))
+                 for j in range(self.data.n_node))
+            ), total=self.data.n_node, leave=leave_tqdm, desc='j'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(p.starmap(self.m_D, tqdm(
+                r = list(tqdm(p.istarmap(self.m_D,
                     ((j, T0_N1i0, Xs_N2i0, G0_N2i0, lamdas, n_sample) 
-                     for j in range(self.data.n_node)),
-                    total=self.data.n_node, leave=leave_tqdm, desc='j'
-                )))
+                     for j in range(self.data.n_node))
+                ), total=self.data.n_node, leave=leave_tqdm, desc='j'))
 
         ms = np.array(list(r))[...,0].T
         Ds = np.array(list(r))[...,1].T
@@ -94,13 +84,13 @@ class Fit:
     def m_D(self, j, T_N1k, Xs_N2k, G_N2k, lamdas=1, n_sample=100):
         lamdas = np.array(lamdas)
         
-        N1j = self.data.N1s[j]
-        N2j = self.data.N2s[j]
+        N1j = self.data.G.N1s[j]
+        N2j = self.data.G.N2s[j]
         
         Y_j = self.data.Ys[j]
         T_N1j = self.data.Ts[N1j]
         X_N2j = self.data.Xs[N2j]
-        G_N2j = self.data.G[np.ix_(N2j,N2j)]
+        G_N2j = self.data.G.sub(N2j)
     
         Xs_N2j = np.concatenate([
             X_N2j[None,...], self.rX(n_sample-1, N2j, self.data.G)
@@ -119,42 +109,65 @@ class Fit:
         D = np.mean(Ds_N2j * pnus_N2j, (-2,-1))
         return m_j, D
 
-    def DR_estimate(self, i0, T0, G0=None, 
+    def DR_average(self, T0,
+                   lamdas=1, n_process=1, 
+                   tqdm=None, leave_tqdm=True):
+
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+        
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.DR_estimate,
+                ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
+                  lamdas, 1, 1, None, False) 
+                 for i0 in range(self.data.n_node))
+            ), total=self.data.n_node, leave=leave_tqdm, desc='i0'))
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.DR_estimate,
+                ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
+                  lamdas, 1, 1, None, False) 
+                 for i0 in range(self.data.n_node))
+            ), total=self.data.n_node, leave=leave_tqdm, desc='i0'))
+        
+        return np.mean(np.array(r))
+
+    def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
                     lamdas=1, n_sample=1000, n_process=1, 
                     tqdm=None, leave_tqdm=True):
         lamdas = np.array(lamdas)
 
         if G0 is None:
             G0 = self.data.G
-        n_node0 = G0.shape[0]
-        N1i0 = np.concatenate([[i0], np.nonzero(G0[i0])[0]])
-        N2i0 = pd.unique(np.concatenate([
-            np.concatenate([[j], np.nonzero(G0[j])[0]])
-            for j in N1i0
-        ]))
+        
+        N1i0 = G0.N1(i0)
+        N2i0 = G0.N2(i0)
+
+        if Xs_N2i0 is None:
+            Xs_N2i0 = self.rX(n_sample, N2i0, G0)
 
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
         
         T0_N1i0 = T0[N1i0]
-        Xs_N2i0 = self.rX(2*n_sample, N2i0, G0)
-        G0_N2i0 = G0[np.ix_(N2i0,N2i0)]
+        G0_N2i0 = G0.sub(N2i0)
         if n_process == 1:
             from itertools import starmap
-            r = list(starmap(self.xi_D, tqdm(
+            r = list(tqdm(starmap(self.xi_D,
                 ((j, T0_N1i0, Xs_N2i0, G0_N2i0, lamdas, n_sample) 
-                 for j in range(self.data.n_node)),
-                total=self.data.n_node, leave=leave_tqdm, desc='j'
-            )))
+                 for j in range(self.data.n_node))
+            ), total=self.data.n_node, leave=leave_tqdm, desc='j'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(p.starmap(self.xi_D, tqdm(
+                r = list(tqdm(p.istarmap(self.xi_D, 
                     ((j, T0_N1i0, Xs_N2i0, G0_N2i0, lamdas, n_sample) 
-                     for j in range(self.data.n_node)),
-                    total=self.data.n_node, leave=leave_tqdm, desc='j'
-                )))
+                     for j in range(self.data.n_node))
+                ), total=self.data.n_node, leave=leave_tqdm, desc='j'))
 
         xis = np.array(r).T[...,0,:]
         Ds = np.array(r).T[...,1,:]
@@ -165,13 +178,13 @@ class Fit:
     def xi_D(self, j, T_N1k, Xs_N2k, G_N2k, lamdas=1, n_sample=100):
         lamdas = np.array(lamdas)
         
-        N1j = self.data.N1s[j]
-        N2j = self.data.N2s[j]
+        N1j = self.data.G.N1(j)
+        N2j = self.data.G.N2(j)
         
         Y_j = self.data.Ys[j]
         T_N1j = self.data.Ts[N1j]
         X_N2j = self.data.Xs[N2j]
-        G_N2j = self.data.G[np.ix_(N2j,N2j)]
+        G_N2j = self.data.G.sub(N2j)
     
         Xs_N2j = np.concatenate([
             X_N2j[None,...], self.rX(n_sample-1, N2j, self.data.G)
@@ -205,33 +218,31 @@ class Fit:
         
         if n_process == 1:
             from itertools import starmap
-            Ys_cv = list(starmap(self.loo_cv_k, tqdm(
+            Ys_cv = list(tqdm(starmap(self.loo_cv_k,
                 ((k, lamdas, n_sample, 1, None, False) 
-                 for k in ks_cv),
-                total=len(ks_cv), leave=leave_tqdm, desc='j'
-            )))
+                 for k in ks_cv)
+            ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                Ys_cv = list(p.starmap(self.loo_cv_k, tqdm(
+                Ys_cv = list(tqdm(p.istarmap(self.loo_cv_k,
                     ((k, lamdas, n_sample, 1, None, False) 
-                     for k in ks_cv),
-                    total=len(ks_cv), leave=leave_tqdm, desc='j'
-                )))
+                     for k in ks_cv)
+                ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
 
         return ks_cv, np.array(Ys_cv).T
 
     def loo_cv_k(self, k, lamdas, n_sample=100, n_process=1, 
                  tqdm = None, leave_tqdm=False):
-        N1k = self.data.N1s[k]
-        N2k = self.data.N2s[k]
+        N1k = self.data.G.N1(k)
+        N2k = self.data.G.N2(k)
         
         mk = np.delete(np.arange(self.data.n_node), N2k)
         
         Ys_mk = self.data.Ys[mk]
         Ts_mk = self.data.Ts[mk]
         Xs_mk = self.data.Xs[mk]
-        G_mk = self.data.G[np.ix_(mk,mk)]
+        G_mk = self.data.G.sub(mk)
         
         fit_mk = KECENI.Model(
             self.mu_model, self.pi_model, self.cov_model, self.delta
@@ -257,17 +268,17 @@ class Fit:
 
         for iter_k in tqdm(range(n_cv), desc='k'):
             k = ks_cv[iter_k]
-            N1k = self.data.N1s[k]
-            N2k = self.data.N2s[k]
+            N1k = self.data.G.N1(k)
+            N2k = self.data.G.N2(k)
             
-            mk = np.delete(np.arange(self.data.n_node), self.data.N2s[k])
+            mk = np.delete(np.arange(self.data.n_node), N2k)
             
             Ys_mk = self.data.Ys[mk]
             Ts_mk = self.data.Ts[mk]
             Xs_mk = self.data.Xs[mk]
-            G_mk = self.data.G[np.ix_(mk,mk)]
-            data_mk = KECENI.Data(Ys_mk, Ts_mk, Xs_mk, G_mk)
+            G_mk = self.data.G.sub(mk)
             
+            data_mk = KECENI.Data(Ys_mk, Ts_mk, Xs_mk, G_mk)
             fit_mk = model.fit(data_mk)
         
             Ys_cv[:,iter_k] = fit_mk.DR_estimate(
