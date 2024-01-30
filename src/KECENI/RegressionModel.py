@@ -101,15 +101,17 @@ class LogisticRegressionFit(RegressionFit):
 
 ###
 class KernelRegressionModel(RegressionModel):
-    def __init__(self, delta, *args, **kwargs):
+    def __init__(self, delta, lamda=None, *args, **kwargs):
         self.delta = delta
+        self.lamda = lamda
 
     def fit(self, data):
-        return KernelRegressionFit(self.delta, data)
+        return KernelRegressionFit(self.delta, self.lamda, data)
 
 class KernelRegressionFit(RegressionFit):
-    def __init__(self, delta, data):
+    def __init__(self, delta, lamda, data):
         self.delta = delta
+        self.lamda = lamda
         self.data = data
 
     def loo_cv_old(self, lamdas, n_cv=100, tqdm=None, leave_tqdm=False):

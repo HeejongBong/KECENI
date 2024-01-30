@@ -118,46 +118,18 @@ class LogisticIIDPropensityFit(PropensityFit):
 
 ###
 class KernelIIDPropensityModel(PropensityModel):
-    def __init__(self, delta, *args, **kwargs):
+    def __init__(self, delta, lamda=None, *args, **kwargs):
         self.delta = delta
+        self.lamda = lamda
 
     def fit(self, data):
-        return KernelIIDPropensityFit(self.delta, data)
+        return KernelIIDPropensityFit(self.delta, self.lamda, data)
 
 class KernelIIDPropensityFit(PropensityFit):
-    def __init__(self, delta, data):
+    def __init__(self, delta, lamda, data):
         self.delta = delta
+        self.lamda = lamda
         self.data = data
-
-    def loo_cv_old(self, lamdas, n_cv=100, tqdm=None, leave_tqdm=False):
-        if tqdm is None:
-            def tqdm(iterable, *args, **kwargs):
-                return iterable
-                
-        model = KernelRegressionModel(self.delta)
-
-        ks_cv = random.choice(np.arange(self.data.n_node), n_cv)
-        Ys_cv = np.zeros(lamdas.shape + (n_cv,))
-
-        for iter_k in tqdm(range(n_cv), leave=leave_tqdm, desc='k', total=n_cv):
-            k = ks_cv[iter_k]
-            N1k = self.data.G.N1(k)
-            N2k = self.data.G.N2(k)
-            
-            mk = np.delete(np.arange(self.data.n_node), self.data.G.N2(k))
-            
-            data_mk = KECENI.Data(
-                self.data.Ys[mk], self.data.Ts[mk], 
-                self.data.Xs[mk], self.data.G.sub(mk)
-            )
-            fit_mk = model.fit(data_mk)
-        
-            Ys_cv[:,iter_k] = fit_mk.predict(
-                self.data.Ts[k], self.data.Xs[N1k], 
-                self.data.G.sub(N1k), lamdas=lamdas
-            )
-
-        return ks_cv, Ys_cv
 
     def loo_cv(self, lamdas, n_cv=100, n_sample=100, n_process=1, 
                tqdm=None, leave_tqdm=True):
