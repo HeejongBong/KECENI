@@ -231,30 +231,25 @@ class Fit:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
 
-        # DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
-        #             lamdas=1, hs=None, n_sample=1000, n_process=1, 
-        #             tqdm=None, level_tqdm=0)
+#         def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
+#                         lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2, 
+#                         tqdm=None, level_tqdm=0):
         
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.DR_estimate,
                 ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
-                  lamdas, hs, 1, 1, tqdm, level_tqdm+1) 
+                  lamdas, hs, 1, 1, 2, tqdm, level_tqdm+1) 
                  for i0 in range(self.data.n_node))
-            ), total=self.data.n_node, leave=None, position=levbel_tqdm+1, desc='i0'))
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.DR_estimate,
                 ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
-                  lamdas, hs, 1, 1, None, level_tqdm+1) 
+                  lamdas, hs, 1, 1, 2, None, level_tqdm+1) 
                  for i0 in range(self.data.n_node))
-            ), total=self.data.n_node, leave=None, position=level_tqdm+1, desc='i0'))
-
-        xi = (Y_j - self.mu(T_N1j, Xs_N2j[0], G_N2j)) \
-           * varpi_j/self.pi(T_N1j, Xs_N2j[0], G_N2j) \
-           * nus_N2j[...,0] \
-           + m_j
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0'))
         
         return np.mean(np.array(r), 0)
 
@@ -316,13 +311,13 @@ class Fit:
             self.mu_model, self.pi_model, self.cov_model, self.delta, self.nu_method
         ).fit(KECENI.Data(Ys_mk, Ts_mk, Xs_mk, G_mk))
 
-        # DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
-        #             lamdas=1, hs=None, n_sample=1000, n_process=1, 
-        #             tqdm=None, level_tqdm=0)
+#         def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
+#                         lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2, 
+#                         tqdm=None, level_tqdm=0):
 
         xhat = fit_mk.DR_estimate(
             k, self.data.Ts, Xs_N2k, self.data.G, 
-            lamdas=lamdas, hs=hs, n_sample=n_sample, n_process=n_process, 
+            lamdas=lamdas, hs=hs, n_sample=n_sample, n_process=n_process, mode=2,
             tqdm = tqdm, level_tqdm = level_tqdm
         )
 
