@@ -268,7 +268,7 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.loo_cv_k,
-                ((k, Xs_G[:,self.data.G.N2(k)], lamdas, hs, 
+                ((k, lamdas, hs, Xs_G[:,self.data.G.N2(k)],
                   n_sample, 1, tqdm, level_tqdm+1) 
                  for k in ks_cv)
             ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))
@@ -277,14 +277,14 @@ class Fit:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.loo_cv_k,
-                    ((k, Xs_G[:,self.data.G.N2(k)], lamdas, hs, 
+                    ((k, lamdas, hs, Xs_G[:,self.data.G.N2(k)],
                       n_sample, 1, None, level_tqdm+1) 
                      for k in ks_cv)
                 ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))      
 
         return ks_cv, np.array([r_i[0] for r_i in r]), np.array([r_i[1] for r_i in r])
 
-    def loo_cv_k(self, k, Xs_N2k, lamdas, hs, n_sample=100, n_process=1, 
+    def loo_cv_k(self, k, lamdas, hs, Xs_N2k, n_sample=100, n_process=1, 
                  tqdm = None, level_tqdm=0):
         N1k = self.data.G.N1(k)
         N2k = self.data.G.N2(k)
@@ -322,3 +322,142 @@ class Fit:
         )
 
         return xi, xhat
+
+    def quick_cv(self, lamdas, hs, n_cv=100, n_sample=100, n_process=1, 
+               tqdm=None, level_tqdm=0):
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+
+        Xs_G = np.concatenate([
+            self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
+        ], 0)
+
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.mu,
+                [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                 for j in np.arange(self.data.n_node)]
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
+        
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.mu,
+                    [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                     for j in np.arange(self.data.n_node)]
+                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j')) 
+
+        mus = np.array(r)
+        
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.pi,
+                [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                 for j in np.arange(self.data.n_node)]
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
+        
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.pi,
+                    [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                     for j in np.arange(self.data.n_node)]
+                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j')) 
+
+        pis = np.array(r)
+        
+        ms = np.mean(mus, -1)
+        varpis = np.mean(pis, -1)
+                        
+        ks_cv = random.choice(np.arange(self.data.n_node), n_cv, replace=False)
+        
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.quick_cv_k,
+                ((k, lamdas, hs, Xs_G, mus, pis, ms, varpis,
+                  tqdm, level_tqdm+1) 
+                 for k in ks_cv)
+            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))
+        
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.quick_cv_k,
+                    ((k, lamdas, hs, Xs_G, mus, pis, ms, varpis,
+                      None, level_tqdm+1) 
+                     for k in ks_cv)
+                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))      
+
+        return ks_cv, np.array([r_i[0] for r_i in r]), np.array([r_i[1] for r_i in r])
+
+    def quick_cv_k(self, k, lamdas, hs, Xs_G, mus, pis, ms, varpis,
+                 tqdm = None, level_tqdm=0):
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+                
+        n_sample = Xs_G.shape[0]
+        
+        Ts_N1k = np.repeat(self.data.Ts[None,self.data.G.N1(k)], n_sample, 0)
+        Xs_N2k = Xs_G[:,self.data.G.N2(k)]
+        G_N2k = self.data.G.sub(self.data.G.N2(k))
+
+        xi_k = (self.data.Ys[k] - mus[k,0]) * varpis[k] / pis[k,0] + ms[k]
+
+        mk = np.delete(np.arange(self.data.n_node), self.data.G.N2(k))
+        ds = np.zeros((len(mk), n_sample, n_sample))
+        for i_j, j in tqdm(enumerate(mk), leave=None, position=level_tqdm, desc='j'):
+            Ts_N1j = np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0)
+            Xs_N2j = Xs_G[:,self.data.G.N2(j)]
+            G_N2j = self.data.G.sub(self.data.G.N2(j))
+            ds[i_j] = self.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
+            
+        if self.nu_method == 'ksm':
+            Ws = np.exp(- hs[...,None,None,None] 
+                          * (ds - np.min(ds, -1)[...,None]))
+            pnus = Ws / np.mean(Ws, -1)[...,None]
+            nus = np.mean(pnus, -2)
+            
+            mns = np.mean(nus * mus[mk], -1)
+            xns = ((self.data.Ys[mk] - mus[mk, 0]) * varpis[mk] / pis[mk,0] * nus[...,0] + mns)
+            Ds = np.mean(ds * pnus, (-2, -1))
+
+            xhat_k = np.sum(
+                xns * np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) * Ds), -1
+            ) / np.sum(
+                np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) * Ds), -1
+            )
+        # elif self.nu_method == 'knn':
+        #     hs = hs.astype(int)
+        #     h_max = np.max(hs)
+            
+        #     proj_j = np.argpartition(Ds_N2j, hs, -1)[:,:h_max]
+        #     D = np.cumsum(np.mean(
+        #         Ds_N2j[np.repeat(np.arange(Xs_N2j.shape[0])[:,None], h_max, -1), proj_j], 0
+        #     ))[hs-1]/hs
+
+        #     if mode == 0:
+        #         return D.reshape(h_shape)
+        
+        #     varpi_j = np.mean(self.pi(Ts_N1j, Xs_N2j, G_N2j))
+        #     m_j = np.cumsum(np.mean(
+        #         self.mu(Ts_N1j, Xs_N2j, G_N2j)[proj_j], 0
+        #     ))[hs-1]/hs
+
+        #     if mode == 1:
+        #         return D.reshape(h_shape), m_j.reshape(h_shape)
+        
+        #     xi = (Y_j - self.mu(T_N1j, Xs_N2j[0], G_N2j)) \
+        #        * varpi_j/self.pi(T_N1j, Xs_N2j[0], G_N2j) \
+        #        * np.cumsum(np.sum(proj_j==0, 0))[hs-1]/hs \
+        #        + m_j
+        else:
+            raise('Only kernel smoothing (ksm) method is supported now')
+            # raise('Only k-nearest-neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
+
+        return xi_k, xhat_k
