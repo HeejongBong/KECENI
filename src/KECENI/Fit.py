@@ -397,6 +397,10 @@ class Fit:
 
     def quick_cv_k(self, k, lamdas, hs, Xs_G, mus, pis, ms, varpis,
                  tqdm = None, level_tqdm=0):
+        hs = np.array(hs)
+        h_shape = hs.shape
+        hs = hs.flatten()
+        
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
@@ -427,37 +431,33 @@ class Fit:
             xns = ((self.data.Ys[mk] - mus[mk, 0]) * varpis[mk] / pis[mk,0] * nus[...,0] + mns)
             Ds = np.mean(ds * pnus, (-2, -1))
 
-            xhat_k = np.sum(
-                xns * np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) * Ds), -1
-            ) / np.sum(
-                np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) * Ds), -1
-            )
-        # elif self.nu_method == 'knn':
-        #     hs = hs.astype(int)
-        #     h_max = np.max(hs)
+        elif self.nu_method == 'knn':
+            hs = hs.astype(int)
+            h_max = np.max(hs)
             
-        #     proj_j = np.argpartition(Ds_N2j, hs, -1)[:,:h_max]
-        #     D = np.cumsum(np.mean(
-        #         Ds_N2j[np.repeat(np.arange(Xs_N2j.shape[0])[:,None], h_max, -1), proj_j], 0
-        #     ))[hs-1]/hs
+            proj = (np.argpartition(ds, hs, -1)[...,:h_max]).transpose((2,0,1))
+            
+            mns = np.cumsum(np.mean(
+                mus[mk[:,None],proj], -1
+            ), 0)[hs-1]/hs[:,None]
+            xns = ((self.data.Ys[mk] - mus[mk, 0]) * varpis[mk] / pis[mk,0] 
+                   * (np.cumsum(np.sum(proj==0, -1), 0)[hs-1]/hs[:,None])
+                   + mns)
+            Ds = np.cumsum(np.mean(
+                ds[np.arange(len(mk))[:,None], 
+                   np.arange(n_sample), proj], -1
+            ), 0)[hs-1]/hs[:,None]
 
-        #     if mode == 0:
-        #         return D.reshape(h_shape)
-        
-        #     varpi_j = np.mean(self.pi(Ts_N1j, Xs_N2j, G_N2j))
-        #     m_j = np.cumsum(np.mean(
-        #         self.mu(Ts_N1j, Xs_N2j, G_N2j)[proj_j], 0
-        #     ))[hs-1]/hs
-
-        #     if mode == 1:
-        #         return D.reshape(h_shape), m_j.reshape(h_shape)
-        
-        #     xi = (Y_j - self.mu(T_N1j, Xs_N2j[0], G_N2j)) \
-        #        * varpi_j/self.pi(T_N1j, Xs_N2j[0], G_N2j) \
-        #        * np.cumsum(np.sum(proj_j==0, 0))[hs-1]/hs \
-        #        + m_j
         else:
-            raise('Only kernel smoothing (ksm) method is supported now')
-            # raise('Only k-nearest-neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
+            raise('Only k-nearest-neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
 
-        return xi_k, xhat_k
+        xhat_k = np.sum(
+            xns
+            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) 
+                     * Ds), -1
+        ) / np.sum(
+            np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) 
+                   * Ds), -1
+        )
+
+        return xi_k, xhat_k.reshape(lamdas.shape+h_shape)
