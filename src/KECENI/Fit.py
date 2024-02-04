@@ -105,66 +105,6 @@ class Fit:
         else:
             return np.mean(mus_N2i0)
 
-    ### smoothed_G_estimate will be deprecated soon
-    def smoothed_G_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
-                            lamdas=1, hs=1, n_sample=1000, n_process=1, 
-                            tqdm=None, level_tqdm=0):
-        if tqdm is None:
-            def tqdm(iterable, *args, **kwargs):
-                return iterable
-                
-        lamdas = np.array(lamdas)
-        
-        if G0 is None:
-            G0 = self.data.G
-        
-        N1i0 = G0.N1(i0)
-        N2i0 = G0.N2(i0)
-
-        T0_N1i0 = T0[N1i0]
-        G0_N2i0 = G0.sub(N2i0)
-        
-        if Xs_N2i0 is None:
-            Xs_N2i0 = self.rX(n_sample, N2i0, G0)
-
-        Xs_G = np.concatenate([
-            self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
-        ], 0)
-
-        # dissimilarity(self, Y_j, T_N1j, Xs_N2j, G_N2j, T_N1k, Xs_N2k, G_N2k, hs=1, mode=0)
-        
-        if n_process == 1:
-            from itertools import starmap
-            r = list(tqdm(starmap(self.dissimilarity,
-                ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)),
-                  T0_N1i0, Xs_N2i0, G0_N2i0, hs, 1)
-                 for j in range(self.data.n_node))
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
-        
-        elif n_process > 1:
-            from multiprocessing import Pool
-            with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.dissimilarity, 
-                    ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)),
-                      T0_N1i0, Xs_N2i0, G0_N2i0, hs, 1) 
-                     for j in range(self.data.n_node))
-                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
-
-        ms = np.array(list(r))[:,0,...]
-        Ds = np.array(list(r))[:,1,...]
-        
-        return np.sum(
-            xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
-            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-                     * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
-        ) / np.sum(
-            np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-                   * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
-        )
-    ###
-
     def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
                     lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2, 
                     tqdm=None, level_tqdm=0):
@@ -200,7 +140,7 @@ class Fit:
                   Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)),
                   T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode)
                  for j in range(self.data.n_node))
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
@@ -210,7 +150,7 @@ class Fit:
                       Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)),
                       T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode) 
                      for j in range(self.data.n_node))
-                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
+                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
 
         Ds = np.array(r)[:,0,...]
         xis = np.array(r)[:,1,...]
@@ -241,7 +181,7 @@ class Fit:
                 ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
                   lamdas, hs, 1, 1, 2, tqdm, level_tqdm+1) 
                  for i0 in range(self.data.n_node))
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0'))
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
@@ -249,7 +189,7 @@ class Fit:
                 ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
                   lamdas, hs, 1, 1, 2, None, level_tqdm+1) 
                  for i0 in range(self.data.n_node))
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0'))
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
         return np.mean(np.array(r), 0)
 
@@ -271,7 +211,7 @@ class Fit:
                 ((k, lamdas, hs, Xs_G[:,self.data.G.N2(k)],
                   n_sample, 1, tqdm, level_tqdm+1) 
                  for k in ks_cv)
-            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))
+            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
@@ -280,7 +220,7 @@ class Fit:
                     ((k, lamdas, hs, Xs_G[:,self.data.G.N2(k)],
                       n_sample, 1, None, level_tqdm+1) 
                      for k in ks_cv)
-                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))      
+                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))      
 
         return ks_cv, np.array([r_i[0] for r_i in r]), np.array([r_i[1] for r_i in r])
 
@@ -339,7 +279,7 @@ class Fit:
                 [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
                   Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
                  for j in np.arange(self.data.n_node)]
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
@@ -348,7 +288,7 @@ class Fit:
                     [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
                       Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
                      for j in np.arange(self.data.n_node)]
-                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j')) 
+                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
 
         mus = np.array(r)
         
@@ -358,7 +298,7 @@ class Fit:
                 [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
                   Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
                  for j in np.arange(self.data.n_node)]
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j'))
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
@@ -367,7 +307,7 @@ class Fit:
                     [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
                       Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
                      for j in np.arange(self.data.n_node)]
-                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j')) 
+                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
 
         pis = np.array(r)
         
@@ -382,7 +322,7 @@ class Fit:
                 ((k, lamdas, hs, Xs_G, mus, pis, ms, varpis,
                   tqdm, level_tqdm+1) 
                  for k in ks_cv)
-            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))
+            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
@@ -391,7 +331,7 @@ class Fit:
                     ((k, lamdas, hs, Xs_G, mus, pis, ms, varpis,
                       None, level_tqdm+1) 
                      for k in ks_cv)
-                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k'))      
+                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))      
 
         return ks_cv, np.array([r_i[0] for r_i in r]), np.array([r_i[1] for r_i in r])
 
