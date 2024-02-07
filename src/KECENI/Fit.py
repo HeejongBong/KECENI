@@ -5,7 +5,7 @@ import pandas as pd
 import KECENI
 
 class Fit:
-    def __init__(self, data, mu_model, pi_model, cov_model, delta, nu_method='knn'):
+    def __init__(self, data, mu_model, pi_model, cov_model, delta, nu_method='ksm'):
         self.data = data
 
         self.mu_model = mu_model
