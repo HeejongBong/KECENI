@@ -4,6 +4,23 @@ import pandas as pd
 
 import KECENI
 
+def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
+    x = np.array(x)
+
+    if bw is None:
+        bw = const * np.log(G.n_node) / np.log(np.maximum(np.mean(np.sum(G.Adj, 0)), 1+eps))
+    
+    z = x/bw
+    w = np.zeros(z.shape)
+    
+    ind1 = (z <= 0.5)
+    ind2 = (z > 0.5) & (z <= 1)
+    
+    w[ind1] = 1 - 6 * z[ind1]**2 * (1-z[ind1])
+    w[ind2] = 2 * (1-z[ind2])**3
+    
+    return w
+
 class Fit:
     def __init__(self, data, mu_model, pi_model, cov_model, delta, nu_method='ksm'):
         self.data = data
@@ -106,7 +123,8 @@ class Fit:
             return np.mean(mus_N2i0)
 
     def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
-                    lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2, 
+                    lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
+                    return_std=False, hac_kernel = parzen_kernel, 
                     tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
@@ -127,9 +145,9 @@ class Fit:
         if Xs_N2i0 is None:
             Xs_N2i0 = self.rX(n_sample, N2i0, G0)
         
-        Xs_G = np.concatenate([
-            self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
-        ], 0)
+        # Xs_G = np.concatenate([
+        #     self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
+        # ], 0)
 
         # dissimilarity(self, Y_j, T_N1j, Xs_N2j, G_N2j, T_N1k, Xs_N2k, G_N2k, hs=1, mode=0)
         
@@ -137,7 +155,11 @@ class Fit:
             from itertools import starmap
             r = list(tqdm(starmap(self.dissimilarity,
                 ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)),
+                  # Xs_G[:,self.data.G.N2(j)], 
+                  np.concatenate([
+                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                  ], 0),
+                  self.data.G.sub(self.data.G.N2(j)),
                   T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode)
                  for j in range(self.data.n_node))
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
@@ -147,7 +169,11 @@ class Fit:
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.dissimilarity, 
                     ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)),
+                      # Xs_G[:,self.data.G.N2(j)], 
+                      np.concatenate([
+                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                      ], 0),
+                      self.data.G.sub(self.data.G.N2(j)),
                       T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode) 
                      for j in range(self.data.n_node))
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
@@ -155,7 +181,7 @@ class Fit:
         Ds = np.array(r)[:,0,...]
         xis = np.array(r)[:,1,...]
         
-        return np.sum(
+        psi = np.sum(
             xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
                      * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
@@ -163,6 +189,20 @@ class Fit:
             np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
                    * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
         )
+
+        if return_std:
+            phis = (
+                (xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
+                 - psi)
+                * np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
+                         * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape))
+            ) / np.sum(
+                np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
+                       * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
+            )
+            return psi, np.sqrt(phis[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) @ phis[...,:,None])[...,0,0]
+        else:
+            return psi
 
     def DR_average(self, T0, lamdas=1, hs=1, 
                    n_process=1, tqdm=None, level_tqdm=0):
@@ -199,85 +239,19 @@ class Fit:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
 
-        Xs_G = np.concatenate([
-            self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
-        ], 0)
-                
-        ks_cv = random.choice(np.arange(self.data.n_node), n_cv, replace=False)
-        
-        if n_process == 1:
-            from itertools import starmap
-            r = list(tqdm(starmap(self.loo_cv_k,
-                ((k, lamdas, hs, Xs_G[:,self.data.G.N2(k)],
-                  n_sample, 1, tqdm, level_tqdm+1) 
-                 for k in ks_cv)
-            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))
-        
-        elif n_process > 1:
-            from multiprocessing import Pool
-            with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.loo_cv_k,
-                    ((k, lamdas, hs, Xs_G[:,self.data.G.N2(k)],
-                      n_sample, 1, None, level_tqdm+1) 
-                     for k in ks_cv)
-                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))      
-
-        return ks_cv, np.array([r_i[0] for r_i in r]), np.array([r_i[1] for r_i in r])
-
-    def loo_cv_k(self, k, lamdas, hs, Xs_N2k, n_sample=100, n_process=1, 
-                 tqdm = None, level_tqdm=0):
-        N1k = self.data.G.N1(k)
-        N2k = self.data.G.N2(k)
-        
-        Y_k = self.data.Ys[k]
-        Ts_N1k = np.repeat(self.data.Ts[None,N1k], Xs_N2k.shape[0], 0)
-        G_N2k = self.data.G.sub(N2k)
-        
-        varpi_k = np.mean(self.pi(Ts_N1k, Xs_N2k, G_N2k))
-        m_k = np.mean(self.mu(Ts_N1k, Xs_N2k, G_N2k))
-
-        xi = (Y_k - self.mu(Ts_N1k[0], Xs_N2k[0], G_N2k)) \
-           * varpi_k/self.pi(Ts_N1k[0], Xs_N2k[0], G_N2k) \
-           + m_k
-        
-        mk = np.delete(np.arange(self.data.n_node), N2k)
-        
-        Ys_mk = self.data.Ys[mk]
-        Ts_mk = self.data.Ts[mk]
-        Xs_mk = self.data.Xs[mk]
-        G_mk = self.data.G.sub(mk)
-        
-        fit_mk = KECENI.Model(
-            self.mu_model, self.pi_model, self.cov_model, self.delta, self.nu_method
-        ).fit(KECENI.Data(Ys_mk, Ts_mk, Xs_mk, G_mk))
-
-#         def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
-#                         lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2, 
-#                         tqdm=None, level_tqdm=0):
-
-        xhat = fit_mk.DR_estimate(
-            k, self.data.Ts, Xs_N2k, self.data.G, 
-            lamdas=lamdas, hs=hs, n_sample=n_sample, n_process=n_process, mode=2,
-            tqdm = tqdm, level_tqdm = level_tqdm
-        )
-
-        return xi, xhat
-
-    def quick_cv(self, lamdas, hs, n_cv=100, n_sample=100, n_process=1, 
-               tqdm=None, level_tqdm=0):
-        if tqdm is None:
-            def tqdm(iterable, *args, **kwargs):
-                return iterable
-
-        Xs_G = np.concatenate([
-            self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
-        ], 0)
+        # Xs_G = np.concatenate([
+        #     self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
+        # ], 0)
 
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.mu,
                 [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                  # Xs_G[:,self.data.G.N2(j)], 
+                  np.concatenate([
+                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                  ], 0),
+                  self.data.G.sub(self.data.G.N2(j)))
                  for j in np.arange(self.data.n_node)]
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
         
@@ -286,7 +260,11 @@ class Fit:
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.mu,
                     [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                      # Xs_G[:,self.data.G.N2(j)], 
+                      np.concatenate([
+                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                      ], 0),
+                      self.data.G.sub(self.data.G.N2(j)))
                      for j in np.arange(self.data.n_node)]
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
 
@@ -296,7 +274,11 @@ class Fit:
             from itertools import starmap
             r = list(tqdm(starmap(self.pi,
                 [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                  # Xs_G[:,self.data.G.N2(j)], 
+                  np.concatenate([
+                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                  ], 0),
+                  self.data.G.sub(self.data.G.N2(j)))
                  for j in np.arange(self.data.n_node)]
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
         
@@ -305,7 +287,11 @@ class Fit:
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.pi,
                     [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                      # Xs_G[:,self.data.G.N2(j)], 
+                      np.concatenate([
+                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                      ], 0),
+                      self.data.G.sub(self.data.G.N2(j)))
                      for j in np.arange(self.data.n_node)]
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
 
@@ -318,8 +304,8 @@ class Fit:
         
         if n_process == 1:
             from itertools import starmap
-            r = list(tqdm(starmap(self.quick_cv_K,
-                (([k], lamdas, hs, Xs_G, mus, pis, ms, varpis,
+            r = list(tqdm(starmap(self.lKo_cv,
+                (([k], lamdas, hs, n_sample, mus, pis, ms, varpis,
                   tqdm, level_tqdm+1) 
                  for k in ks_cv)
             ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))
@@ -327,82 +313,13 @@ class Fit:
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.quick_cv_K,
-                    (([k], lamdas, hs, Xs_G, mus, pis, ms, varpis,
+                r = list(tqdm(p.istarmap(self.lKo_cv,
+                    (([k], lamdas, hs, n_sample, mus, pis, ms, varpis,
                       None, level_tqdm+1) 
                      for k in ks_cv)
                 ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))      
 
         return np.array([r_i[0][0] for r_i in r]), np.array([r_i[1][0] for r_i in r])
-
-#     def quick_cv_k(self, k, lamdas, hs, Xs_G, mus, pis, ms, varpis,
-#                  tqdm = None, level_tqdm=0):
-#         hs = np.array(hs)
-#         h_shape = hs.shape
-#         hs = hs.flatten()
-        
-#         if tqdm is None:
-#             def tqdm(iterable, *args, **kwargs):
-#                 return iterable
-                
-#         n_sample = Xs_G.shape[0]
-        
-#         Ts_N1k = np.repeat(self.data.Ts[None,self.data.G.N1(k)], n_sample, 0)
-#         Xs_N2k = Xs_G[:,self.data.G.N2(k)]
-#         G_N2k = self.data.G.sub(self.data.G.N2(k))
-
-#         xi_k = (self.data.Ys[k] - mus[k,0]) * varpis[k] / pis[k,0] + ms[k]
-
-#         Vmk = np.delete(np.arange(self.data.n_node), self.data.G.N2(k))
-#         ds = np.zeros((len(Vmk), n_sample, n_sample))
-#         for i_j, j in tqdm(enumerate(Vmk), leave=None, position=level_tqdm, desc='j'):
-#             Ts_N1j = np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0)
-#             Xs_N2j = Xs_G[:,self.data.G.N2(j)]
-#             G_N2j = self.data.G.sub(self.data.G.N2(j))
-#             ds[i_j] = self.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
-            
-#         if self.nu_method == 'ksm':
-#             Ws = np.exp(- hs[...,None,None,None] 
-#                           * (ds - np.min(ds, -1)[...,None]))
-#             pnus = Ws / np.mean(Ws, -1)[...,None]
-#             nus = np.mean(pnus, -2)
-            
-#             mns = np.mean(nus * mus[Vmk], -1)
-#             xns = ((self.data.Ys[Vmk] - mus[Vmk, 0]) 
-#                    * varpis[Vmk] / pis[Vmk,0] * nus[...,0] + mns)
-#             Ds = np.mean(ds * pnus, (-2, -1))
-
-#         elif self.nu_method == 'knn':
-#             hs = hs.astype(int)
-#             h_max = np.max(hs)
-            
-#             proj = (np.argpartition(ds, hs, -1)[...,:h_max]).transpose((2,0,1))
-            
-#             mns = np.cumsum(np.mean(
-#                 mus[Vmk[:,None],proj], -1
-#             ), 0)[hs-1]/hs[:,None]
-#             xns = ((self.data.Ys[Vmk] - mus[Vmk, 0]) 
-#                    * varpis[Vmk] / pis[Vmk,0] 
-#                    * (np.cumsum(np.sum(proj==0, -1), 0)[hs-1]/hs[:,None])
-#                    + mns)
-#             Ds = np.cumsum(np.mean(
-#                 ds[np.arange(len(Vmk))[:,None], 
-#                    np.arange(n_sample), proj], -1
-#             ), 0)[hs-1]/hs[:,None]
-
-#         else:
-#             raise('Only k-nearest-neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
-
-#         xhat_k = np.sum(
-#             xns
-#             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) 
-#                      * Ds), -1
-#         ) / np.sum(
-#             np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) 
-#                    * Ds), -1
-#         )
-
-#         return xi_k, xhat_k.reshape(lamdas.shape+h_shape)
     
     def lko_cv(self, lamdas, hs, n_cv=100, n_sample=100, n_leave=100, n_trial=10, n_process=1, 
                tqdm=None, level_tqdm=0):
@@ -418,7 +335,11 @@ class Fit:
             from itertools import starmap
             r = list(tqdm(starmap(self.mu,
                 [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                  # Xs_G[:,self.data.G.N2(j)], 
+                  np.concatenate([
+                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                  ], 0), 
+                  self.data.G.sub(self.data.G.N2(j)))
                  for j in np.arange(self.data.n_node)]
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
         
@@ -427,7 +348,11 @@ class Fit:
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.mu,
                     [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                      # Xs_G[:,self.data.G.N2(j)], 
+                      np.concatenate([
+                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                      ], 0), 
+                      self.data.G.sub(self.data.G.N2(j)))
                      for j in np.arange(self.data.n_node)]
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
 
@@ -437,7 +362,11 @@ class Fit:
             from itertools import starmap
             r = list(tqdm(starmap(self.pi,
                 [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                  Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                  # Xs_G[:,self.data.G.N2(j)], 
+                  np.concatenate([
+                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                  ], 0),
+                  self.data.G.sub(self.data.G.N2(j)))
                  for j in np.arange(self.data.n_node)]
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
         
@@ -446,7 +375,11 @@ class Fit:
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.pi,
                     [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
-                      Xs_G[:,self.data.G.N2(j)], self.data.G.sub(self.data.G.N2(j)))
+                      # Xs_G[:,self.data.G.N2(j)], 
+                      np.concatenate([
+                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                      ], 0),
+                      self.data.G.sub(self.data.G.N2(j)))
                      for j in np.arange(self.data.n_node)]
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
 
@@ -473,8 +406,8 @@ class Fit:
             
         if n_process == 1:
             from itertools import starmap
-            r = list(tqdm(starmap(self.quick_cv_K,
-                ((K, lamdas, hs, Xs_G, mus, pis, ms, varpis,
+            r = list(tqdm(starmap(self.lKo_cv,
+                ((K, lamdas, hs, n_sample, mus, pis, ms, varpis,
                   tqdm, level_tqdm+1) 
                  for K in Ks)
             ), total=n_cv, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
@@ -482,15 +415,15 @@ class Fit:
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.quick_cv_K,
-                    ((K, lamdas, hs, Xs_G, mus, pis, ms, varpis,
+                r = list(tqdm(p.istarmap(self.lKo_cv,
+                    ((K, lamdas, hs, n_sample, mus, pis, ms, varpis,
                       None, level_tqdm+1) 
                      for K in Ks)
                 ), total=n_cv, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))      
 
         return np.array([r_i[0] for r_i in r]), np.array([r_i[1] for r_i in r])
     
-    def quick_cv_K(self, K, lamdas, hs, Xs_G, mus, pis, ms, varpis,
+    def lKo_cv(self, K, lamdas, hs, n_sample, mus, pis, ms, varpis,
                    tqdm = None, level_tqdm=0):
         hs = np.array(hs)
         h_shape = hs.shape
@@ -500,7 +433,7 @@ class Fit:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
                 
-        n_sample = Xs_G.shape[0]
+        # n_sample = Xs_G.shape[0]
         
         N2K = pd.unique(np.concatenate([
                     self.data.G.N2(k) for k in K
@@ -511,7 +444,9 @@ class Fit:
         xhs = np.zeros((len(K),)+lamdas.shape+h_shape)
         for i_k, k in tqdm(enumerate(K), leave=None, position=level_tqdm, desc='k'):
             Ts_N1k = np.repeat(self.data.Ts[None,self.data.G.N1(k)], n_sample, 0)
-            Xs_N2k = Xs_G[:,self.data.G.N2(k)]
+            Xs_N2k = np.concatenate([
+                self.data.Xs[None,self.data.G.N2(k),:], self.rX(n_sample-1, self.data.G.N2(k), self.data.G)
+            ], 0)
             G_N2k = self.data.G.sub(self.data.G.N2(k))
 
             xis[i_k] = (self.data.Ys[k] - mus[k,0]) * varpis[k] / pis[k,0] + ms[k]
@@ -519,7 +454,9 @@ class Fit:
             ds = np.zeros((len(VmK), n_sample, n_sample))
             for i_j, j in tqdm(enumerate(VmK), leave=None, position=level_tqdm+1, desc='j'):
                 Ts_N1j = np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0)
-                Xs_N2j = Xs_G[:,self.data.G.N2(j)]
+                Xs_N2j = np.concatenate([
+                    self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                ], 0)
                 G_N2j = self.data.G.sub(self.data.G.N2(j))
                 ds[i_j] = self.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
 

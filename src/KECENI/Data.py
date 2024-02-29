@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import scipy.sparse as sparse
 
 class Data:
     def __init__(self, Ys, Ts, Xs, G):
@@ -38,3 +39,6 @@ class Graph:
             np.concatenate([[j], np.nonzero(self.Adj[j])[0]])
             for j in self.N1(i)
         ]))
+
+    def dist(self):
+        return sparse.csgraph.floyd_warshall(self.Adj)
