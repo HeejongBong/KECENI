@@ -200,7 +200,7 @@ class Fit:
                 np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
                        * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
             )
-            return psi, np.sqrt(phis[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) @ phis[...,:,None])[...,0,0]
+            return psi, np.sqrt(phis.T[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) @ phis.T[...,:,None]).T[0,0]
         else:
             return psi
 
