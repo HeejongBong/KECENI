@@ -21,6 +21,7 @@ class Graph:
             raise('Adj is not a square matrix')
         
         self.n_node = self.Adj.shape[0]
+        self.dist = sparse.csgraph.floyd_warshall(self.Adj)
         self.Zs = Zs
 
     def sub(self, ids):
@@ -39,6 +40,3 @@ class Graph:
             np.concatenate([[j], np.nonzero(self.Adj[j])[0]])
             for j in self.N1(i)
         ]))
-
-    def dist(self):
-        return sparse.csgraph.floyd_warshall(self.Adj)

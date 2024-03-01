@@ -51,7 +51,7 @@ class KernelEstimate:
                    * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
         )
 
-    def std(self, lamdas=None, abs=False, hac_kernel = parzen_kernel):
+    def std(self, lamdas=None, abs=False, hac_kernel = parzen_kernel, **kwargs):
         if lamdas is None:
             lamdas = self.lamdas
         else:
@@ -69,12 +69,12 @@ class KernelEstimate:
 
         if abs:
             return np.sqrt(
-                np.abs(phis).T[...,None,:] @ hac_kernel(self.fit.data.G.dist(), G=self.fit.data.G) 
+                np.abs(phis).T[...,None,:] @ hac_kernel(self.fit.data.G.dist, G=self.fit.data.G, **kwargs) 
                 @ np.abs(phis).T[...,:,None]
             ).T[0,0]
         else:
             return np.sqrt(
-                phis.T[...,None,:] @ hac_kernel(self.fit.data.G.dist(), G=self.fit.data.G) 
+                phis.T[...,None,:] @ hac_kernel(self.fit.data.G.dist, G=self.fit.data.G, **kwargs) 
                 @ phis.T[...,:,None]
             ).T[0,0]
 
