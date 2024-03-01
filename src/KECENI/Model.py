@@ -11,5 +11,5 @@ class Model:
 
     def fit(self, data, **kwargs):
         return KECENI.Fit(
-            data, self.mu_model, self.pi_model, self.cov_model, self.delta, self.nu_method, **kwargs
+            self, data, self.nu_method, **kwargs
         )    

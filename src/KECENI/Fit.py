@@ -21,19 +21,48 @@ def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
     
     return w
 
+class KernelEstimate:
+    def __init__(self, fit, i0, T0, G0, hs, Ds, xis):
+        self.fit = fit
+        
+        self.i0 = i0
+        self.T0 = T0
+        self.G0 = G0
+        
+        self.hs = hs
+        self.Ds = Ds
+        self.xis = xis
+
+    def psi(self, lamdas):
+        return np.sum(
+            self.xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
+            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                     * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+        ) / np.sum(
+            np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                   * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+        )
+
+    def std(self, lamdas):
+        phis = (
+            (self.xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
+             - psi)
+            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                     * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape))
+        ) / np.sum(
+            np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                   * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+        )
+
 class Fit:
-    def __init__(self, data, mu_model, pi_model, cov_model, delta, nu_method='ksm'):
+    def __init__(self, model, data, nu_method='ksm'):
         self.data = data
+        self.model = model
 
-        self.mu_model = mu_model
-        self.pi_model = pi_model
-        self.cov_model = cov_model
+        self.mu_fit = self.model.mu_model.fit(data)
+        self.pi_fit = self.model.pi_model.fit(data)
+        self.cov_fit = self.model.cov_model.fit(data)
 
-        self.mu_fit = self.mu_model.fit(data)
-        self.pi_fit = self.pi_model.fit(data)
-        self.cov_fit = self.cov_model.fit(data)
-
-        self.delta = delta
         self.nu_method = nu_method
         
     def mu(self, T_N1, X_N2, G_N2):
@@ -52,7 +81,7 @@ class Fit:
         
         Ts_N1j = np.repeat(T_N1j[None,:], Xs_N2j.shape[0], 0)
         Ts_N1k = np.repeat(T_N1k[None,:], Xs_N2k.shape[0], 0)
-        Ds_N2j = self.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
+        Ds_N2j = self.model.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
 
         if self.nu_method == 'knn':
             hs = hs.astype(int)
@@ -200,7 +229,10 @@ class Fit:
                 np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
                        * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
             )
-            return psi, np.sqrt(phis.T[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) @ phis.T[...,:,None]).T[0,0]
+            return psi, np.sqrt(
+                np.abs(phis).T[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) 
+                @ np.abs(phis).T[...,:,None]
+            ).T[0,0]
         else:
             return psi
 
@@ -458,7 +490,7 @@ class Fit:
                     self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
                 ], 0)
                 G_N2j = self.data.G.sub(self.data.G.N2(j))
-                ds[i_j] = self.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
+                ds[i_j] = self.model.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
 
             if self.nu_method == 'ksm':
                 Ws = np.exp(- hs[...,None,None,None] 
