@@ -22,37 +22,61 @@ def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
     return w
 
 class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, hs, Ds, xis):
+    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, mode):
         self.fit = fit
         
         self.i0 = i0
         self.T0 = T0
         self.G0 = G0
-        
+
+        self.lamdas = lamdas
         self.hs = hs
+        
         self.Ds = Ds
         self.xis = xis
+        self.mode = mode
 
-    def psi(self, lamdas):
+    def psi(self, lamdas=None):
+        if lamdas is None:
+            lamdas = self.lamdas
+        else:
+            lamdas = np.array(lamdas)
+            
         return np.sum(
-            self.xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
+            self.xis.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+                     * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
         ) / np.sum(
             np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+                   * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
         )
 
-    def std(self, lamdas):
+    def std(self, lamdas=None, abs=False, hac_kernel = parzen_kernel):
+        if lamdas is None:
+            lamdas = self.lamdas
+        else:
+            lamdas = np.array(lamdas)
+            
         phis = (
-            (self.xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
-             - psi)
+            (self.xis.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
+             - self.psi(lamdas))
             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape))
+                     * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape))
         ) / np.sum(
             np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+                   * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
         )
+
+        if abs:
+            return np.sqrt(
+                np.abs(phis).T[...,None,:] @ hac_kernel(self.fit.data.G.dist(), G=self.fit.data.G) 
+                @ np.abs(phis).T[...,:,None]
+            ).T[0,0]
+        else:
+            return np.sqrt(
+                phis.T[...,None,:] @ hac_kernel(self.fit.data.G.dist(), G=self.fit.data.G) 
+                @ phis.T[...,:,None]
+            ).T[0,0]
 
 class Fit:
     def __init__(self, model, data, nu_method='ksm'):
@@ -151,6 +175,66 @@ class Fit:
         else:
             return np.mean(mus_N2i0)
 
+    def kernel_AIPW(self, i0, T0, Xs_N2i0=None, G0=None, 
+                    lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
+                    tqdm=None, level_tqdm=0):
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+                
+        lamdas = np.array(lamdas)
+        hs = np.array(hs)
+
+        if G0 is None:
+            G0 = self.data.G
+        
+        N1i0 = G0.N1(i0)
+        N2i0 = G0.N2(i0)
+
+        T0_N1i0 = T0[N1i0]
+        G0_N2i0 = G0.sub(N2i0)
+        
+        if Xs_N2i0 is None:
+            Xs_N2i0 = self.rX(n_sample, N2i0, G0)
+        
+        # Xs_G = np.concatenate([
+        #     self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
+        # ], 0)
+
+        # dissimilarity(self, Y_j, T_N1j, Xs_N2j, G_N2j, T_N1k, Xs_N2k, G_N2k, hs=1, mode=0)
+        
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.dissimilarity,
+                ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
+                  # Xs_G[:,self.data.G.N2(j)], 
+                  np.concatenate([
+                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                  ], 0),
+                  self.data.G.sub(self.data.G.N2(j)),
+                  T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode)
+                 for j in range(self.data.n_node))
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+        
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.dissimilarity, 
+                    ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
+                      # Xs_G[:,self.data.G.N2(j)], 
+                      np.concatenate([
+                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
+                      ], 0),
+                      self.data.G.sub(self.data.G.N2(j)),
+                      T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode) 
+                     for j in range(self.data.n_node))
+                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+
+        Ds = np.array(r)[:,0,...]
+        xis = np.array(r)[:,1,...]
+
+        return KernelEstimate(self, i0, T0, G0, lamdas, hs, Ds, xis, mode)
+
     def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
                     lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
                     return_std=False, hac_kernel = parzen_kernel, 
@@ -209,6 +293,8 @@ class Fit:
 
         Ds = np.array(r)[:,0,...]
         xis = np.array(r)[:,1,...]
+
+        return KernelEstimate(self, i0, T0, G0, hs, Ds, xis)
         
         psi = np.sum(
             xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
