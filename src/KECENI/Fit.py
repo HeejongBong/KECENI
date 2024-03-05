@@ -36,48 +36,109 @@ class KernelEstimate:
         self.xis = xis
         self.mode = mode
 
-    def psi(self, lamdas=None):
+    def est(self, lamdas=None, id_bst=None):
         if lamdas is None:
             lamdas = self.lamdas
         else:
             lamdas = np.array(lamdas)
+
+        if id_bst is None:
+            id_bst = np.arange(self.fit.data.G.n_node)
             
         return np.sum(
-            self.xis.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
+            self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+                     * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
         ) / np.sum(
             np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+                   * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
         )
 
-    def std(self, lamdas=None, abs=False, hac_kernel = parzen_kernel, **kwargs):
+    def mse(self, lamdas=None, abs=False, hac_kernel=parzen_kernel, id_bst=None, **kwargs):
         if lamdas is None:
             lamdas = self.lamdas
         else:
             lamdas = np.array(lamdas)
+
+        if id_bst is None:
+            id_bst = np.arange(self.fit.data.G.n_node)
             
         phis = (
-            (self.xis.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)
-             - self.psi(lamdas))
+            (self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
+             - self.est(lamdas, id_bst))
             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape))
+                     * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape))
         ) / np.sum(
             np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+self.hs.shape)), 0
+                   * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
         )
 
         if abs:
-            return np.sqrt(
-                np.abs(phis).T[...,None,:] @ hac_kernel(self.fit.data.G.dist, G=self.fit.data.G, **kwargs) 
+            return (
+                np.abs(phis).T[...,None,:] 
+                @ hac_kernel(self.fit.data.G.dist[id_bst[:,None],id_bst], 
+                             G=self.fit.data.G.sub(id_bst), **kwargs) 
                 @ np.abs(phis).T[...,:,None]
             ).T[0,0]
         else:
-            return np.sqrt(
-                phis.T[...,None,:] @ hac_kernel(self.fit.data.G.dist, G=self.fit.data.G, **kwargs) 
+            return (
+                phis.T[...,None,:] 
+                @ hac_kernel(self.fit.data.G.dist[id_bst[:,None],id_bst], 
+                             G=self.fit.data.G.sub(id_bst), **kwargs) 
                 @ phis.T[...,:,None]
             ).T[0,0]
 
+    def ste(self, lamdas=None, abs=False, hac_kernel=parzen_kernel, id_bst=None, **kwargs):
+        return np.sqrt(self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id_bst, **kwargs))
+
+    def calibrate_bw(self, bws, lamdas=None, abs=False, hac_kernel=parzen_kernel, 
+                     n_bst=1000, n_id1=None, return_ss=False, tqdm=None, **kwargs):
+        if lamdas is None:
+            lamdas = self.lamdas
+        else:
+            lamdas = np.array(lamdas)
+
+        if n_id1 is None:
+            n_id1 = self.fit.data.G.n_node * 0.15
+
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+
+        ss1_bst = np.zeros((n_bst,)+lamdas.shape+self.hs.shape)
+        ss2_bst = np.zeros((n_bst,)+bws.shape+lamdas.shape+self.hs.shape)
+
+        for iter_bst in tqdm(np.arange(n_bst)):
+            id1_bst = {np.random.choice(np.arange(self.fit.data.G.n_node))}
+            for k in np.arange(n_id1-1):
+                N1_id1 = set(np.concatenate([self.fit.data.G.N1(i) for i in id1_bst]))
+                dN1_id1 = N1_id1.difference(id1_bst)
+                if len(dN1_id1) == 0:
+                    id1_bst.add(np.random.choice(
+                        np.delete(np.arange(self.fit.data.G.n_node), list(id1_bst))
+                    ))
+                else:
+                    id1_bst.add(np.random.choice(list(dN1_id1)))
+            N2_id1 = set(np.concatenate([self.fit.data.G.N2(i) for i in id1_bst]))
+            id2_bst = set(range(self.fit.data.G.n_node)).difference(
+                set(np.concatenate([self.fit.data.G.N2(i) for i in N2_id1]))
+            )
+            
+            id1_bst = np.array(list(id1_bst))
+            id2_bst = np.array(list(id2_bst))
+            
+            ss1_bst[iter_bst] = (self.est(lamdas=lamdas, id_bst=id1_bst)-self.est(lamdas=lamdas, id_bst=id2_bst))**2
+            ss2_bst[iter_bst] = np.array([
+                self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id1_bst, bw=bw_i, **kwargs) 
+                + self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id2_bst, bw=bw_i, **kwargs)
+                for bw_i in bws
+            ])
+
+        if return_ss:
+            return ss1_bst, ss2_bst
+        else:
+            return np.mean(ss1_bst[:,None]/ss2_bst, 0)
+        
 class Fit:
     def __init__(self, model, data, nu_method='ksm'):
         self.data = data
@@ -293,8 +354,6 @@ class Fit:
 
         Ds = np.array(r)[:,0,...]
         xis = np.array(r)[:,1,...]
-
-        return KernelEstimate(self, i0, T0, G0, hs, Ds, xis)
         
         psi = np.sum(
             xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
@@ -356,6 +415,9 @@ class Fit:
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
+
+        lamdas = np.array(lamdas)
+        hs = np.array(hs)
 
         # Xs_G = np.concatenate([
         #     self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
