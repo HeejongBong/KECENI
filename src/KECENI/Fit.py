@@ -108,7 +108,7 @@ class KernelEstimate:
         ss1_bst = np.zeros((n_bst,)+lamdas.shape+self.hs.shape)
         ss2_bst = np.zeros((n_bst,)+bws.shape+lamdas.shape+self.hs.shape)
 
-        for i_bst in tqdm(np.arange(n_bst), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_bst', smoothing=0):
+        for i_bst in tqdm(np.arange(n_bst), total=n_bst, leave=None, position=level_tqdm, desc='i_bst', smoothing=0):
             id1_bst = {np.random.choice(np.arange(self.fit.data.G.n_node))}
             for k in np.arange(n_id1-1):
                 N1_id1 = set(np.concatenate([self.fit.data.G.N1(i) for i in id1_bst]))
