@@ -92,7 +92,7 @@ class KernelEstimate:
         return np.sqrt(self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id_bst, **kwargs))
 
     def calibrate_bw(self, bws, lamdas=None, abs=False, hac_kernel=parzen_kernel, 
-                     n_bst=1000, n_id1=None, return_ss=False, tqdm=None, **kwargs):
+                     n_bst=1000, n_id1=None, return_ss=False, tqdm=None, level_tqdm=0, **kwargs):
         if lamdas is None:
             lamdas = self.lamdas
         else:
@@ -108,7 +108,7 @@ class KernelEstimate:
         ss1_bst = np.zeros((n_bst,)+lamdas.shape+self.hs.shape)
         ss2_bst = np.zeros((n_bst,)+bws.shape+lamdas.shape+self.hs.shape)
 
-        for iter_bst in tqdm(np.arange(n_bst)):
+        for i_bst in tqdm(np.arange(n_bst), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_bst', smoothing=0):
             id1_bst = {np.random.choice(np.arange(self.fit.data.G.n_node))}
             for k in np.arange(n_id1-1):
                 N1_id1 = set(np.concatenate([self.fit.data.G.N1(i) for i in id1_bst]))
@@ -127,8 +127,8 @@ class KernelEstimate:
             id1_bst = np.array(list(id1_bst))
             id2_bst = np.array(list(id2_bst))
             
-            ss1_bst[iter_bst] = (self.est(lamdas=lamdas, id_bst=id1_bst)-self.est(lamdas=lamdas, id_bst=id2_bst))**2
-            ss2_bst[iter_bst] = np.array([
+            ss1_bst[i_bst] = (self.est(lamdas=lamdas, id_bst=id1_bst)-self.est(lamdas=lamdas, id_bst=id2_bst))**2
+            ss2_bst[i_bst] = np.array([
                 self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id1_bst, bw=bw_i, **kwargs) 
                 + self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id2_bst, bw=bw_i, **kwargs)
                 for bw_i in bws
