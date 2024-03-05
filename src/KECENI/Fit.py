@@ -481,6 +481,9 @@ class Fit:
         varpis = np.mean(pis, -1)
                         
         ks_cv = random.choice(np.arange(self.data.n_node), n_cv, replace=False)
+
+        # def lKo_cv(self, K, lamdas, hs, n_sample, mus, pis, ms, varpis,
+        #            tqdm = None, level_tqdm=0):
         
         if n_process == 1:
             from itertools import starmap
@@ -672,13 +675,13 @@ class Fit:
             else:
                 raise('Only k-nearest-neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
 
-            xhs[i_k] = np.sum(
+            xhs[i_k] = (np.sum(
                 xns
                 * np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) 
                          * Ds), -1
             ) / np.sum(
                 np.exp(- lamdas.reshape(lamdas.shape+(1,)*(hs.ndim+1)) 
                        * Ds), -1
-            ).reshape(lamdas.shape+h_shape)
+            )).reshape(lamdas.shape+h_shape)
 
         return xis, xhs
