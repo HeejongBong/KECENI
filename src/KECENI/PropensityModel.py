@@ -22,27 +22,65 @@ class PropensityFit:
     def predict(self, T_N1, X_N2, G_N2):
         return 0
 
+    def sample(self, n_sample, X_N2, G_N2):
+        n1 = len(G_N2.N1(0))
+        return np.zeros((n_sample, n1))
+
 
 
 ###
 class FittedPropensityModel(PropensityModel):
-    def __init__(self, pi):
+    def __init__(self, pi, rT=None):
         self.pi = pi
+        self.rT = rT
 
     def fit(self, data):
-        return(FittedPropensityFit(self.pi))
+        return(FittedPropensityFit(self.pi, self.rT))
 
 class FittedPropensityFit(PropensityFit):
-    def __init__(self, pi):
+    def __init__(self, pi, rT):
         self.pi = pi
+        self.rT = rT
 
     def predict(self, T_N1, X_N2, G_N2):
         return self.pi(T_N1, X_N2, G_N2)
 
+    def sample(self, n_sample, X_N2, G_N2):
+        return self.rT(n_sample, X_N2, G_N2)
+
+
 
 
 ###
-class LinearIIDPropensityModel(PropensityModel):
+class IIDPropensityModel(PropensityModel):
+    def fit(self, data):
+        return IIDPropensityFit()
+        
+class IIDPropensityFit(PropensityFit):
+    def predict_i(self, T, X_N1, G_N1):
+        return 0
+
+    def predict(self, T_N1, X_N2, G_N2):
+        n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
+        return np.prod([self.predict_i(
+            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j))
+        ) for j in G_N2.N1(0)], 0)
+
+    def sample_i(self, n_sample, X_N1, G_N1):
+        return np.zeros(n_sample)
+
+    def sample(self, n_sample, X_N2, G_N2):
+        n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
+        return np.stack([self.sample_i(
+            n_sample,  X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j))
+        ) for j in G_N2.N1(0)], -1)
+
+
+
+
+
+###
+class LinearIIDPropensityModel(IIDPropensityModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
         self.model = LinearRegression(*args, **kwargs)
@@ -59,7 +97,7 @@ class LinearIIDPropensityModel(PropensityModel):
         ))
         return LinearIIDPropensityFit(self.summary, model_fit)
         
-class LinearIIDPropensityFit(PropensityFit):
+class LinearIIDPropensityFit(IIDPropensityFit):
     def __init__(self, summary, model_fit):
         self.summary = summary
         self.model_fit = model_fit
@@ -69,18 +107,18 @@ class LinearIIDPropensityFit(PropensityFit):
         dZ = Z.shape[-1]
         T_hat = self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
         return stats.norm.pdf((T - T_hat)/self.model_fit.sigma_)
-        
-    def predict(self, T_N1, X_N2, G_N2):
-        n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
-        return np.prod([self.predict_i(
-            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j))
-        ) for j in np.arange(n1)], 0)
+
+    def sample_i(self, n_sample, X_N1, G_N1):
+        Z = self.summary(X_N1, G_N1)
+        dZ = Z.shape[-1]
+        T_hat = self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
+        return stats.norm.rvs(T_hat, pij_fit.sigma_, size=(n_sample,)+T_hat.shape)
 
 
 
 
 ###
-class LogisticIIDPropensityModel(PropensityModel):
+class LogisticIIDPropensityModel(IIDPropensityModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
         self.model = LogisticRegression(*args, **kwargs)
@@ -94,7 +132,7 @@ class LogisticIIDPropensityModel(PropensityModel):
         model_fit = self.model.fit(Zs, data.Ts)
         return LogisticIIDPropensityFit(self.summary, model_fit)
 
-class LogisticIIDPropensityFit(PropensityFit):
+class LogisticIIDPropensityFit(IIDPropensityFit):
     def __init__(self, summary, model_fit):
         self.summary = summary
         self.model_fit = model_fit
@@ -106,18 +144,18 @@ class LogisticIIDPropensityFit(PropensityFit):
             self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0]
             - T.flatten()
         ).reshape(T.shape)
-    
-    def predict(self, T_N1, X_N2, G_N2):
-        n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
-        return np.prod([self.predict_i(
-            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j))
-        ) for j in np.arange(n1)], 0)
+
+    def sample_i(self, n_sample, X_N1, G_N1):
+        Z = self.summary(X_N1, G_N1)
+        dZ = Z.shape[-1]
+        return random.binomial(1, self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1]),
+                               size=(n_sample,)+Z.shape[:-1])
 
 
 
 
 ###
-class KernelIIDPropensityModel(PropensityModel):
+class KernelIIDPropensityModel(IIDPropensityModel):
     def __init__(self, delta, lamda=None, *args, **kwargs):
         self.delta = delta
         self.lamda = lamda
@@ -125,7 +163,7 @@ class KernelIIDPropensityModel(PropensityModel):
     def fit(self, data):
         return KernelIIDPropensityFit(self.delta, self.lamda, data)
 
-class KernelIIDPropensityFit(PropensityFit):
+class KernelIIDPropensityFit(IIDPropensityFit):
     def __init__(self, delta, lamda, data):
         self.delta = delta
         self.lamda = lamda
@@ -193,10 +231,9 @@ class KernelIIDPropensityFit(PropensityFit):
                            * Ds), -1)
             - 1 + T
         )
-    
-    def predict(self, T_N1, X_N2, G_N2, lamdas=None):        
-        n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
-        return np.prod([self.predict_i(
-            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
-            lamdas
-        ) for j in np.arange(n1)], 0)
+
+    def sample_i(self, n_sample, X_N1, G_N1):
+        ##############
+        #### TODO ####
+        ##############
+        return np.zeros(n_sample)
