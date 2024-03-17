@@ -112,7 +112,7 @@ class LinearIIDPropensityFit(IIDPropensityFit):
         Z = self.summary(X_N1, G_N1)
         dZ = Z.shape[-1]
         T_hat = self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
-        return stats.norm.rvs(T_hat, pij_fit.sigma_, size=(n_sample,)+T_hat.shape)
+        return stats.norm.rvs(T_hat, self.model_fit.sigma_, size=(n_sample,)+T_hat.shape)
 
 
 
