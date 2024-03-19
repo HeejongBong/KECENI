@@ -8,9 +8,14 @@ def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
     x = np.array(x)
 
     if bw is None:
-        bw = const * np.log(G.n_node) / np.log(np.maximum(np.mean(np.sum(G.Adj, 0)), 1+eps))
+        bw = np.array(
+            const * np.log(G.n_node) 
+            / np.log(np.maximum(np.mean(np.sum(G.Adj, 0)), 1+eps))
+        )
+    else:
+        bw = np.array(bw)
     
-    z = x/bw
+    z = x/bw.reshape(bw.shape+(1,)*x.ndim)
     w = np.zeros(z.shape)
     
     ind1 = (z <= 0.5)
@@ -139,19 +144,13 @@ class KernelEstimate:
         )
 
         if abs:
-            return (
-                np.abs(phis).T[...,None,:] 
-                @ hac_kernel(self.fit.data.G.dist[id_bst[:,None],id_bst], 
-                             G=self.fit.data.G.sub(id_bst), **kwargs) 
-                @ np.abs(phis).T[...,:,None]
-            ).T[0,0]
+            return np.sum(np.abs(phis) * np.tensordot(
+                hac_kernel(self.fit.data.G.dist, **kwargs), np.abs(phis), axes=(-1,0)
+            ), -phis.ndim)
         else:
-            return (
-                phis.T[...,None,:] 
-                @ hac_kernel(self.fit.data.G.dist[id_bst[:,None],id_bst], 
-                             G=self.fit.data.G.sub(id_bst), **kwargs) 
-                @ phis.T[...,:,None]
-            ).T[0,0]
+            return np.sum(phis * np.tensordot(
+                hac_kernel(self.fit.data.G.dist, **kwargs), phis, axes=(-1,0)
+            ), -phis.ndim)
 
     def ste(self, lamdas=None, abs=False, hac_kernel=parzen_kernel, id_bst=None, **kwargs):
         return np.sqrt(self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id_bst, **kwargs))
