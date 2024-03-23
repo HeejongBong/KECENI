@@ -43,26 +43,49 @@ class KernelEstimate:
 
         self.offsets = None
 
-    def est(self, lamdas=None, id_bst=None):
-        if lamdas is None:
-            lamdas = self.lamdas
-        else:
-            lamdas = np.array(lamdas)
-
+    def est(self, lamdas=None, offset=False, n_sample=100, hac_kernel=parzen_kernel, 
+            id_bst=None, tqdm=None, level_tqdm=0, **kwargs):
         if id_bst is None:
             id_bst = np.arange(self.fit.data.G.n_node)
-            
-        return np.sum(
-            self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
-            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
-        ) / np.sum(
-            np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
-        )
 
-    def mse(self, lamdas=None, abs=False, n_sample=100, hac_kernel=parzen_kernel, 
-            id_bst=None, tqdm=None, level_tqdm=0, **kwargs):
+        if offset:
+            if lamdas is None:
+                lamdas = self.lamdas
+                if self.offsets is None:
+                    self.offsets = self.get_offset(lamdas, n_sample, tqdm, level_tqdm)
+                offsets = self.offsets
+            else:
+                lamdas = np.array(lamdas)
+                offsets = self.get_offset(lamdas, n_sample, tqdm, level_tqdm)
+                
+            phis = (
+                self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
+                * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                         * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape))
+                + offsets[id_bst]
+            ) / np.sum(
+                np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                       * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
+            )
+
+            return np.sum(phis, 0)
+        else:
+            if lamdas is None:
+                lamdas = self.lamdas
+            else:
+                lamdas = np.array(lamdas)
+                        
+            return np.sum(
+                self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
+                * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                         * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
+            ) / np.sum(
+                np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
+                       * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
+            )
+
+    def mse(self, lamdas=None, n_sample=100, hac_kernel=parzen_kernel, 
+            id_bst=None, tqdm=None, level_tqdm=0, abs=False, **kwargs):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
@@ -78,63 +101,10 @@ class KernelEstimate:
 
         if id_bst is None:
             id_bst = np.arange(self.fit.data.G.n_node)
-
-        # if self.offsets is None:
-            # hf = self.hs.flatten()
-
-            # T0_N1i0 = self.T0[self.G0.N1(self.i0)]
-            # Xs_N2i0 = self.fit.rX(n_sample, self.G0.N2(self.i0), self.G0)
-            # G0_N2i0 = self.G0.sub(self.G0.N2(self.i0))
-
-            # self.offsets = list()
-            # for j in tqdm(range(self.fit.data.n_node)):
-            #     Xs_N2j = np.concatenate([
-            #         self.fit.data.Xs[None,self.fit.data.G.N2(j)],
-            #         self.fit.rX(n_sample-1, self.fit.data.G.N2(j), self.fit.data.G)
-            #     ], 0)
-            #     Ts_N1j = self.fit.rT(1, Xs_N2j, self.fit.data.G.sub(self.fit.data.G.N2(j)))[0]
-                
-            #     Ds_bst = list()
-            #     ms_bst = list()
-            #     mus_bst = list()
-            #     nus_bst = list()
-                
-            #     for T_N1j in Ts_N1j:
-            #         Ds_N2j = self.fit.model.delta(
-            #             np.repeat(T0_N1i0[None,:], n_sample, 0), Xs_N2i0, 
-            #             self.G0.sub(self.G0.N2(self.i0)),
-            #             np.repeat(T_N1j[None,:], n_sample, 0), Xs_N2j, 
-            #             self.fit.data.G.sub(self.fit.data.G.N2(j))
-            #         )
-            #         Ws_N2j = np.exp(- hf[...,None,None] 
-            #                         * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
-            #         pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
-            #         nus_N2j = np.mean(pnus_N2j, -2)
-            #         mus_N2j = self.fit.mu(np.repeat(T_N1j[None,:], n_sample, 0), Xs_N2j, 
-            #                               self.fit.data.G.sub(self.fit.data.G.N2(j)))
-                    
-            #         Ds_bst.append(np.mean(Ds_N2j * pnus_N2j, (-2,-1)).reshape(self.hs.shape))
-            #         ms_bst.append(np.mean(nus_N2j * mus_N2j, -1).reshape(self.hs.shape))
-            #         mus_bst.append(mus_N2j[...,0])
-            #         nus_bst.append(nus_N2j[...,0].reshape(self.hs.shape))
-                    
-            #     Ds_bst = np.array(Ds_bst)
-            #     ms_bst = np.array(ms_bst)
-            #     mus_bst = np.array(mus_bst)
-            #     nus_bst = np.array(nus_bst)
-                
-            #     self.offsets.append(np.mean(
-            #         (mus_bst.reshape((n_sample,)+(1,)*self.hs.ndim) * nus_bst - ms_bst
-            #         ).reshape((n_sample,)+(1,)*lamdas.ndim+self.hs.shape)
-            #         * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-            #                  * Ds_bst.reshape((n_sample,)+(1,)*lamdas.ndim+self.hs.shape)), 0
-            #     ))
-            
-            # self.offsets = np.array(self.offsets)
             
         phis = (
             (self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
-             - self.est(lamdas, id_bst))
+             - self.est(llamdas=lamdas, id_bst=id_bst, offset=True))
             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
                      * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape))
             + offsets[id_bst]
@@ -152,8 +122,10 @@ class KernelEstimate:
                 hac_kernel(self.fit.data.G.dist, **kwargs), phis, axes=(-1,0)
             ), -phis.ndim)
 
-    def ste(self, lamdas=None, abs=False, hac_kernel=parzen_kernel, id_bst=None, **kwargs):
-        return np.sqrt(self.mse(lamdas=lamdas, abs=abs, hac_kernel=hac_kernel, id_bst=id_bst, **kwargs))
+    def ste(self, lamdas=None, abs=False, n_sample=100, hac_kernel=parzen_kernel, 
+            id_bst=None, tqdm=None, level_tqdm=0, **kwargs):
+        return np.sqrt(self.mse(lamdas=lamdas, abs=abs, n_sample=n_sample, hac_kernel=hac_kernel, 
+                                id_bst=id_bst, tqdm=tqdm, level_tqdm=level_tqdm, **kwargs))
 
     def get_offset(self, lamdas=None, n_sample=100, tqdm=None, level_tqdm=0):
         if tqdm is None:
