@@ -103,7 +103,7 @@ class KernelEstimate:
             
         phis = (
             (self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
-             - self.est(llamdas=lamdas, id_bst=id_bst, offset=True))
+             - self.est(lamdas=lamdas, id_bst=id_bst, offset=True))
             * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
                      * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape))
             + offsets[id_bst]
