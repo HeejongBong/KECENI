@@ -141,9 +141,9 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
         Z = self.summary(X_N1, G_N1)
         dZ = Z.shape[-1]
         return np.abs(
-            self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0]
-            - T.flatten()
-        ).reshape(T.shape)
+            self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1])
+            - T
+        )
 
     def sample_i(self, n_sample, X_N1, G_N1):
         Z = self.summary(X_N1, G_N1)

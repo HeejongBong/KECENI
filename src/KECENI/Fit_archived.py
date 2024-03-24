@@ -27,7 +27,7 @@ def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
     return w
 
 class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, offsets=None):
+    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, mode):
         self.fit = fit
         
         self.i0 = i0
@@ -39,8 +39,9 @@ class KernelEstimate:
         
         self.Ds = Ds
         self.xis = xis
+        self.mode = mode
 
-        self.offsets = offsets
+        self.offsets = None
 
     def est(self, lamdas=None, offset=False, n_sample=100, hac_kernel=parzen_kernel, 
             id_bst=None, tqdm=None, level_tqdm=0, **kwargs):
@@ -160,9 +161,9 @@ class KernelEstimate:
                 Xs_N2i0 = self.fit.rX(n_sample, self.G0.N2(self.i0), self.G0)
         
                 Ds_N2j = self.fit.model.delta(
-                    T0_N1i0[None,None], Xs_N2i0[:,None], 
+                    np.repeat(T0_N1i0[None,:], n_sample, 0), Xs_N2i0, 
                     self.G0.sub(self.G0.N2(self.i0)),
-                    T_N1j[None,None], Xs_N2j[None,:], 
+                    np.repeat(T_N1j[None,:], n_sample, 0), Xs_N2j, 
                     self.fit.data.G.sub(self.fit.data.G.N2(j))
                 )
                 
@@ -292,8 +293,7 @@ class Fit:
         
         Ts_N1j = np.repeat(T_N1j[None,:], Xs_N2j.shape[0], 0)
         Ts_N1k = np.repeat(T_N1k[None,:], Xs_N2k.shape[0], 0)
-        Ds_N2j = self.model.delta(T_N1k[None,None], Xs_N2k[:,None], G_N2k,
-                                  T_N1j[None,None], Xs_N2j[None,:], G_N2j)
+        Ds_N2j = self.model.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
 
         if self.nu_method == 'knn':
             hf = hf.astype(int)
@@ -422,133 +422,6 @@ class Fit:
         xis = np.array(r)[:,1,...]
 
         return KernelEstimate(self, i0, T0, G0, lamdas, hs, Ds, xis, mode)
-
-    def EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_sample=200, seed=12345):
-        np.random.seed(seed)
-        
-        lamdas = np.array(lamdas)
-        hs = np.array(hs)
-        hf = hs.flatten()
-        
-        T0_N1i0 = T0[self.data.G.N1(i0)]
-        Xs_N2i0 = self.rX(
-            n_sample**2, G0.N2(i0), G0
-        )
-        Xs_N2i0 = Xs_N2i0.reshape((n_sample,n_sample)+Xs_N2i0.shape[-2:])
-
-        Ts_N1j = np.concatenate([
-            self.data.Ts[None,self.data.G.N1(j)],
-            self.rT(1, self.rX(n_sample-1, self.data.G.N2(j), self.data.G), 
-                    self.data.G.sub(self.data.G.N2(j)))[0]
-        ], 0)
-        Xs_N2j = np.concatenate([
-            np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_sample, axis=0),
-            self.rX(
-                n_sample*(n_sample-1), self.data.G.N2(j), self.data.G
-            ).reshape((n_sample,n_sample-1)+self.data.Xs[self.data.G.N2(j)].shape)
-        ], 1)
-        
-        Ds_N2j = self.model.delta(
-            Ts_N1j[:,None,None],
-            Xs_N2j[:,None,:], self.data.G.sub(self.data.G.N2(j)),
-            T0_N1i0[None,None,None],
-            Xs_N2i0[:,:,None], G0.sub(G0.N2(i0))
-        )
-        
-        # if self.nu_method == 'knn':
-        #     hf = hf.astype(int)
-        #     h_max = np.max(hf)
-            
-        #     proj_j = np.argpartition(Ds_N2j, hf, -1)[:,:h_max]
-        #     D = np.cumsum(np.mean(
-        #         Ds_N2j[np.repeat(np.arange(Xs_N2j.shape[0])[:,None], h_max, -1), proj_j], 0
-        #     ))[hf-1]/hf
-
-        #     if mode == 0:
-        #         return D.reshape(hs.shape)
-        
-        #     varpi_j = np.mean(self.pi(Ts_N1j, Xs_N2j, G_N2j))
-        #     m_j = np.cumsum(np.mean(
-        #         self.mu(Ts_N1j, Xs_N2j, G_N2j)[proj_j], 0
-        #     ))[hs-1]/hs
-
-        #     if mode == 1:
-        #         return D.reshape(hs.shape), m_j.reshape(hs.shape)
-        
-        #     xi = (Y_j - self.mu(T_N1j, Xs_N2j[0], G_N2j)) \
-        #        * varpi_j/self.pi(T_N1j, Xs_N2j[0], G_N2j) \
-        #        * np.cumsum(np.sum(proj_j==0, 0))[hf-1]/hf \
-        #        + m_j
-            
-        if self.nu_method == 'ksm':
-            Ws_N2j = np.exp(- hf[...,None,None,None] 
-                            * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
-            pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
-            nus_N2j = np.mean(pnus_N2j, -2)
-            mus_N2j = self.mu(
-                np.tile(Ts_N1j[:,None], (n_sample,1)),
-                Xs_N2j[:,:], self.data.G.sub(self.data.G.N2(j))
-            )
-            pis_N2j = self.pi(
-                np.repeat(Ts_N1j[None,0], n_sample, 0), Xs_N2j[0], 
-                self.data.G.sub(self.data.G.N2(j))
-            )
-
-            Ds_bst = np.mean(Ds_N2j * pnus_N2j, (-2,-1))
-            ms_bst = np.mean(nus_N2j * mus_N2j, -1)
-            mus_bst = mus_N2j[...,0]
-            nus_bst = nus_N2j[...,0]
-
-            offset = np.mean(
-                (mus_bst * nus_bst - ms_bst)
-                * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
-                         * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),n_sample))), -1
-            )
-            D = Ds_bst[...,0]            
-            xi = (self.data.Ys[j] - mus_bst[0]) * np.mean(pis_N2j) / pis_N2j[0] + ms_bst[...,0]
-            
-        else:
-            raise('Only kernel smoothing (ksm) method is supported now')
-        
-        return D.reshape(hs.shape), xi.reshape(hs.shape), offset.reshape(lamdas.shape+hs.shape)
-
-    def kernel_EIF(self, i0, T0, G0=None, 
-                   lamdas=1, hs=1, n_sample=200, n_process=1,
-                   tqdm=None, level_tqdm=0):
-        if tqdm is None:
-            def tqdm(iterable, *args, **kwargs):
-                return iterable
-                
-        lamdas = np.array(lamdas)
-        hs = np.array(hs)
-
-        if G0 is None:
-            G0 = self.data.G
-
-        # EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_sample=200, seed=12345)
-        
-        if n_process == 1:
-            from itertools import starmap
-            r = list(tqdm(starmap(self.EIF_j,
-                (
-                    (j, i0, T0, G0, lamdas, hs, n_sample, np.random.randint(12345))
-                    for j in range(self.data.n_node)
-                )
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-        
-        elif n_process > 1:
-            from multiprocessing import Pool
-            with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.EIF_j,
-                    (
-                        (j, i0, T0, G0, lamdas, hs, n_sample, np.random.randint(12345))
-                        for j in range(self.data.n_node)
-                    )
-                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-
-        Ds, xis, offsets = list(zip(*r))
-
-        return KernelEstimate(self, i0, T0, G0, lamdas, hs, np.array(Ds), np.array(xis), np.array(offsets))
 
     def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
                     lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
@@ -880,7 +753,7 @@ class Fit:
         xis = np.zeros(len(K))
         xhs = np.zeros((len(K),)+lamdas.shape+h_shape)
         for i_k, k in tqdm(enumerate(K), leave=None, position=level_tqdm, desc='k'):
-            T_N1k = self.data.Ts[self.data.G.N1(k)]
+            Ts_N1k = np.repeat(self.data.Ts[None,self.data.G.N1(k)], n_sample, 0)
             Xs_N2k = np.concatenate([
                 self.data.Xs[None,self.data.G.N2(k),:], self.rX(n_sample-1, self.data.G.N2(k), self.data.G)
             ], 0)
@@ -890,13 +763,12 @@ class Fit:
 
             ds = np.zeros((len(VmK), n_sample, n_sample))
             for i_j, j in tqdm(enumerate(VmK), leave=None, position=level_tqdm+1, desc='j'):
-                T_N1j = self.data.Ts[self.data.G.N1(j)]
+                Ts_N1j = np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0)
                 Xs_N2j = np.concatenate([
                     self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
                 ], 0)
                 G_N2j = self.data.G.sub(self.data.G.N2(j))
-                ds[i_j] = self.model.delta(T_N1k[None,None], Xs_N2k[:,None], G_N2k,
-                                           T_N1j[None,None], Xs_N2j[None,:], G_N2j)
+                ds[i_j] = self.model.delta(Ts_N1k, Xs_N2k, G_N2k, Ts_N1j, Xs_N2j, G_N2j)
 
             if self.nu_method == 'ksm':
                 Ws = np.exp(- hs[...,None,None,None] 
