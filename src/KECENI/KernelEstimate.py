@@ -92,7 +92,7 @@ class KernelEstimate:
                 np.sum(
                     Ks_all[:,None].astype(int) > np.arange(np.max(Ks).astype(int)), 0
                 )[:,None] >= hops[...,None,None]
-            )00
+            )
             phis_bst[i_bst] = np.sum(
                 np.sum(bs_bst, -2).reshape(hops.shape+(self.fit.data.n_node,)+(1,)*(phis.ndim-1))
                 * phis, hops.ndim
