@@ -3,7 +3,7 @@ import numpy.random as random
 import scipy.stats as stats
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
-import KECENI
+from .Data import Data
 
 
 
@@ -199,7 +199,7 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         N2k = self.data.G.N2(k)
         mk = np.delete(np.arange(self.data.n_node), N2k)
         
-        data_mk = KECENI.Data(
+        data_mk = Data(
             self.data.Ys[mk], self.data.Ts[mk], 
             self.data.Xs[mk], self.data.G.sub(mk)
         )

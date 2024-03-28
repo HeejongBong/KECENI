@@ -2,8 +2,6 @@ import numpy as np
 import numpy.random as random
 import pandas as pd
 
-import KECENI
-
 def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
     x = np.array(x)
 

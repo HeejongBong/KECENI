@@ -1,4 +1,4 @@
-import KECENI.Fit
+from .Fit import Fit
 
 class Model:
     def __init__(self, mu_model, pi_model, cov_model, delta, nu_method='ksm'):
@@ -10,6 +10,6 @@ class Model:
         self.nu_method = nu_method
 
     def fit(self, data, **kwargs):
-        return KECENI.Fit(
+        return Fit(
             self, data, self.nu_method, **kwargs
         )    

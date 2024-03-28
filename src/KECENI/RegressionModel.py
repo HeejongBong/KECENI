@@ -2,7 +2,7 @@ import numpy as np
 import numpy.random as random
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
-import KECENI
+from .Data import Data
 
 ###
 class RegressionModel:
@@ -131,7 +131,7 @@ class KernelRegressionFit(RegressionFit):
             
             mk = np.delete(np.arange(self.data.n_node), N2k)
             
-            data_mk = KECENI.Data(
+            data_mk = Data(
                 self.data.Ys[mk], self.data.Ts[mk], 
                 self.data.Xs[mk], self.data.G.sub(mk)
             )
@@ -174,7 +174,7 @@ class KernelRegressionFit(RegressionFit):
         N2k = self.data.G.N2(k)
         mk = np.delete(np.arange(self.data.n_node), N2k)
         
-        data_mk = KECENI.Data(
+        data_mk = Data(
             self.data.Ys[mk], self.data.Ts[mk], 
             self.data.Xs[mk], self.data.G.sub(mk)
         )

@@ -2,192 +2,8 @@ import numpy as np
 import numpy.random as random
 import pandas as pd
 
-import KECENI
-
-def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
-    x = np.array(x)
-
-    if bw is None:
-        bw = np.array(
-            const * np.log(G.n_node) 
-            / np.log(np.maximum(np.mean(np.sum(G.Adj, 0)), 1+eps))
-        )
-    else:
-        bw = np.array(bw)
-    
-    z = x/bw.reshape(bw.shape+(1,)*x.ndim)
-    w = np.zeros(z.shape)
-    
-    ind1 = (z <= 0.5)
-    ind2 = (z > 0.5) & (z <= 1)
-    
-    w[ind1] = 1 - 6 * z[ind1]**2 * (1-z[ind1])
-    w[ind2] = 2 * (1-z[ind2])**3
-    
-    return w
-
-class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, offsets=None):
-        self.fit = fit
-        
-        self.i0 = i0
-        self.T0 = T0
-        self.G0 = G0
-
-        self.lamdas = np.array(lamdas)
-        self.hs = np.array(hs)
-        
-        self.Ds = Ds
-        self.xis = xis
-
-        self.offsets = offsets
-
-    def est(self, id_bst=None):
-        if id_bst is None:
-            id_bst = np.arange(self.fit.data.G.n_node)
-
-        lamdas = self.lamdas
-        
-        if self.offsets is None:
-            offsets = np.zeros(self.fit.data.G.n_node)
-        else:
-            offsets = self.offsets 
-            
-        phis = (
-            self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
-            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape))
-            + offsets[id_bst]
-        ) / np.sum(
-            np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
-        )
-
-        return np.sum(phis, 0)
-
-    def mse(self, hac_kernel=parzen_kernel, id_bst=None, abs=False, **kwargs):
-        if id_bst is None:
-            id_bst = np.arange(self.fit.data.G.n_node)
-            
-        lamdas = self.lamdas
-        
-        if self.offsets is None:
-            offsets = np.zeros(self.fit.data.G.n_node)
-        else:
-            offsets = self.offsets
-            
-        phis = (
-            (self.xis[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)
-             - self.est(id_bst=id_bst))
-            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape))
-            + offsets[id_bst]
-        ) / np.sum(
-            np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds[id_bst].reshape((len(id_bst),)+(1,)*lamdas.ndim+self.hs.shape)), 0
-        )
-
-        if abs:
-            return np.sum(np.abs(phis) * np.tensordot(
-                hac_kernel(self.fit.data.G.dist, **kwargs), np.abs(phis), axes=(-1,0)
-            ), -phis.ndim)
-        else:
-            return np.sum(phis * np.tensordot(
-                hac_kernel(self.fit.data.G.dist, **kwargs), phis, axes=(-1,0)
-            ), -phis.ndim)
-
-    def ste(self, hac_kernel=parzen_kernel, id_bst=None, abs=False, **kwargs):
-        return np.sqrt(self.mse(abs=abs, hac_kernel=hac_kernel, 
-                                id_bst=id_bst, **kwargs))
-
-    def get_offset(self, lamdas=None, n_sample=100, tqdm=None, level_tqdm=0):
-        if tqdm is None:
-            def tqdm(iterable, *args, **kwargs):
-                return iterable
-
-        if lamdas is None:
-            lamdas = self.lamdas
-                
-        hf = self.hs.flatten()
-
-        T0_N1i0 = self.T0[self.G0.N1(self.i0)]
-        G0_N2i0 = self.G0.sub(self.G0.N2(self.i0))
-
-        offsets = list()
-        for j in tqdm(range(self.fit.data.n_node), smoothing=0, desc='j', leave=None, position=level_tqdm):
-            Xs_N2j = np.concatenate([
-                self.fit.data.Xs[None,self.fit.data.G.N2(j)],
-                self.fit.rX(n_sample-1, self.fit.data.G.N2(j), self.fit.data.G)
-            ], 0)
-            Ts_N1j = self.fit.rT(1, Xs_N2j, self.fit.data.G.sub(self.fit.data.G.N2(j)))[0]
-            
-            Ds_bst = list()
-            ms_bst = list()
-            mus_bst = list()
-            nus_bst = list()
-            
-            for T_N1j in Ts_N1j:
-                Xs_N2j = np.concatenate([
-                    self.fit.data.Xs[None,self.fit.data.G.N2(j)],
-                    self.fit.rX(n_sample-1, self.fit.data.G.N2(j), self.fit.data.G)
-                ], 0)
-                Xs_N2i0 = self.fit.rX(n_sample, self.G0.N2(self.i0), self.G0)
-        
-                Ds_N2j = self.fit.model.delta(
-                    T0_N1i0[None,None], Xs_N2i0[:,None], 
-                    self.G0.sub(self.G0.N2(self.i0)),
-                    T_N1j[None,None], Xs_N2j[None,:], 
-                    self.fit.data.G.sub(self.fit.data.G.N2(j))
-                )
-                
-                if self.fit.nu_method == 'ksm':
-                    Ws_N2j = np.exp(- hf[...,None,None] 
-                                    * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
-                    pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
-                    nus_N2j = np.mean(pnus_N2j, -2)
-                    mus_N2j = self.fit.mu(np.repeat(T_N1j[None,:], n_sample, 0), Xs_N2j, 
-                                          self.fit.data.G.sub(self.fit.data.G.N2(j)))
-                
-                    Ds_bst.append(np.mean(Ds_N2j * pnus_N2j, (-2,-1)).reshape(self.hs.shape))
-                    ms_bst.append(np.mean(nus_N2j * mus_N2j, -1).reshape(self.hs.shape))
-                    mus_bst.append(mus_N2j[...,0])
-                    nus_bst.append(nus_N2j[...,0].reshape(self.hs.shape))
-
-                elif self.fit.nu_method == 'knn':
-                    Ws_N2j = np.exp(- hf[...,None,None] 
-                                    * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
-                    pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
-                    nus_N2j = np.mean(pnus_N2j, -2)
-                    mus_N2j = self.fit.mu(np.repeat(T_N1j[None,:], n_sample, 0), Xs_N2j, 
-                                          self.fit.data.G.sub(self.fit.data.G.N2(j)))
-                
-                    Ds_bst.append((np.cumsum(np.mean(
-                        Ds_N2j[np.repeat(np.arange(Xs_N2j.shape[0])[:,None], h_max, -1), proj_j], 0
-                    ))[hf-1]/hf).reshape(self.hs.shape))
-                    ms_bst.append((np.cumsum(np.mean(
-                        self.mu(Ts_N1j, Xs_N2j, G_N2j)[proj_j], 0
-                    ))[hs-1]/hs).reshape(self.hs.shape))
-                    mus_bst.append(mus_N2j[...,0])
-                    nus_bst.append((np.cumsum(np.sum(
-                        proj_j==0, 0
-                    ))[hf-1]/hf).reshape(self.hs.shape))
-
-                else:
-                    raise('Only k-nearest-neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
-                
-            Ds_bst = np.array(Ds_bst)
-            ms_bst = np.array(ms_bst)
-            mus_bst = np.array(mus_bst)
-            nus_bst = np.array(nus_bst)
-            
-            offsets.append(np.mean(
-                (mus_bst.reshape((n_sample,)+(1,)*self.hs.ndim) * nus_bst - ms_bst
-                ).reshape((n_sample,)+(1,)*lamdas.ndim+self.hs.shape)
-                * np.exp(- lamdas.reshape(lamdas.shape+(1,)*self.hs.ndim) 
-                         * Ds_bst.reshape((n_sample,)+(1,)*lamdas.ndim+self.hs.shape)), 0
-            ))
-        
-        self.offsets = np.array(offsets)
+from .KernelEstimate import KernelEstimate
+from . import istarmap
         
 class Fit:
     def __init__(self, model, data, nu_method='ksm'):
@@ -470,7 +286,7 @@ class Fit:
 
     def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
                     lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
-                    return_std=False, hac_kernel = parzen_kernel, 
+                    # return_std=False, hac_kernel = parzen_kernel, 
                     tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
@@ -536,22 +352,23 @@ class Fit:
                    * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
         )
 
-        if return_std:
-            phis = (
-                (xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
-                 - psi)
-                * np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-                         * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape))
-            ) / np.sum(
-                np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-                       * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
-            )
-            return psi, np.sqrt(
-                np.abs(phis).T[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) 
-                @ np.abs(phis).T[...,:,None]
-            ).T[0,0]
-        else:
-            return psi
+        # if return_std:
+        #     phis = (
+        #         (xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
+        #          - psi)
+        #         * np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
+        #                  * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape))
+        #     ) / np.sum(
+        #         np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
+        #                * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
+        #     )
+        #     return psi, np.sqrt(
+        #         np.abs(phis).T[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) 
+        #         @ np.abs(phis).T[...,:,None]
+        #     ).T[0,0]
+        # else:
+        
+        return psi
 
     def DR_average(self, T0, lamdas=1, hs=1, 
                    n_process=1, tqdm=None, level_tqdm=0):
