@@ -60,10 +60,11 @@ class IIDPropensityFit(PropensityFit):
     def predict_i(self, T, X_N1, G_N1):
         return 0
 
-    def predict(self, T_N1, X_N2, G_N2):
+    def predict(self, T_N1, X_N2, G_N2, *args, **kwargs):
         n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
         return np.prod([self.predict_i(
-            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j))
+            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
+            *args, **kwargs
         ) for j in G_N2.N1(0)], 0)
 
     def sample_i(self, n_sample, X_N1, G_N1):
@@ -212,11 +213,12 @@ class KernelIIDPropensityFit(IIDPropensityFit):
             self.data.G.sub(N1k), lamdas=lamdas
         )
 
-    def predict_i(self, T, X_N1, G_N1, lamdas):
+    def predict_i(self, T, X_N1, G_N1, lamdas=None):
         if lamdas is None:
             lamdas = np.array(self.lamda)
         else:
             lamdas = np.array(lamdas)
+            
         Ds = np.array(
             [self.delta(X_N1, G_N1, 
                         self.data.Xs[self.data.G.N1(i)],
@@ -232,8 +234,11 @@ class KernelIIDPropensityFit(IIDPropensityFit):
             - 1 + T
         )
 
-    def sample_i(self, n_sample, X_N1, G_N1):
-        ##############
-        #### TODO ####
-        ##############
-        return np.zeros(n_sample)
+    def sample_i(self, n_sample, X_N1, G_N1, lamdas=None):
+        if lamdas is None:
+            lamdas = np.array(self.lamda)
+        else:
+            lamdas = np.array(lamdas)
+            
+        ps = self.predict_i(1, X_N1, G_N1, lamdas=lamdas)
+        return random.binomial(1, ps, size=(n_sample,)+ps.shape)

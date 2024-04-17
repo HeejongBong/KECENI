@@ -31,9 +31,9 @@ class Graph:
             return Graph(self.Adj[np.ix_(ids,ids)], self.Zs[ids])
 
     def N1(self, i):
-        return np.concatenate(
+        return pd.unique(np.concatenate(
             [[i], np.nonzero(self.Adj[i])[0]]
-        )
+        ))
 
     def N2(self, i):
         return pd.unique(np.concatenate([
