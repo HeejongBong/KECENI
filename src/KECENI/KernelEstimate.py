@@ -112,7 +112,41 @@ class KernelEstimate:
     def ste_bbb(self, hops=1, n_bst=1000, tqdm=None, level_tqdm=0):
         return np.sqrt(self.mse_bbb(hops, n_bst, tqdm, level_tqdm))
 
-    def get_offset(self, lamdas=None, n_sample=100, tqdm=None, level_tqdm=0):
+    def get_offset(self, lamdas=None, n_T=100, n_X=110, n_X0=None, n_process=1, tqdm=None, level_tqdm=0):
+        if lamdas is None:
+            lamdas = self.lamdas
+        else:
+            self.lamdas = np.array(lamdas)
+
+        if n_T < 1:
+            return None
+
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.fit.EIF_j,
+                (
+                    (j, self.i0, self.T0, self.G0, lamdas, self.hs, 
+                     n_T, n_X, n_X0, np.random.randint(12345))
+                    for j in range(self.fit.data.n_node)
+                )
+            ), total=self.fit.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+        
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.fit.EIF_j,
+                    (
+                        (j, self.i0, self.T0, self.G0, lamdas, self.hs, 
+                         n_T, n_X, n_X0, np.random.randint(12345))
+                        for j in range(self.fit.data.n_node)
+                    )
+                ), total=self.fit.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+
+        Ds, xis, offsets = list(zip(*r))
+
+        return offsets
+
+    def get_offset_archive(self, lamdas=None, n_sample=100, tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable

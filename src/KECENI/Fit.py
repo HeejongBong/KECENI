@@ -165,8 +165,11 @@ class Fit:
 
         return KernelEstimate(self, i0, T0, G0, lamdas, hs, Ds, xis)
 
-    def EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=120, seed=12345):
+    def EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
+
+        if n_X0 is None:
+            n_X0 = n_X
         
         lamdas = np.array(lamdas)
         hs = np.array(hs)
@@ -263,7 +266,7 @@ class Fit:
         return D, xi, offset
 
     def kernel_EIF(self, i0, T0, G0=None, 
-                   lamdas=1, hs=1, n_T=100, n_X=110, n_X0=120, n_process=1,
+                   lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, n_process=1,
                    tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
@@ -275,7 +278,7 @@ class Fit:
         if G0 is None:
             G0 = self.data.G
 
-        # EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=120, seed=12345)
+        # EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345)
         
         if n_process == 1:
             from itertools import starmap
