@@ -178,11 +178,14 @@ class Fit:
         )
         Xs_N2i0 = Xs_N2i0.reshape((n_T+1,n_X0)+Xs_N2i0.shape[-2:])
 
-        Ts_N1j = np.concatenate([
-            self.data.Ts[None,self.data.G.N1(j)],
-            self.rT(1, self.rX(n_T, self.data.G.N2(j), self.data.G), 
-                    self.data.G.sub(self.data.G.N2(j)))[0]
-        ], 0)
+        if n_T > 0:
+            Ts_N1j = np.concatenate([
+                self.data.Ts[None,self.data.G.N1(j)],
+                self.rT(1, self.rX(n_T, self.data.G.N2(j), self.data.G), 
+                        self.data.G.sub(self.data.G.N2(j)))[0]
+            ], 0)
+        else:
+            Ts_N1j = self.data.Ts[None,self.data.G.N1(j)]
         Xs_N2j = np.concatenate([
             np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0),
             self.rX(
