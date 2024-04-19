@@ -235,7 +235,7 @@ class Fit:
             nus_N2j = np.mean(pnus_N2j, -2)            
 
             Ds_bst = np.mean(Ds_N2j * pnus_N2j, (-2,-1))
-            ms_bst = np.mean(nus_N2j[...,1:] * mus_N2j[...,1:], -1)
+            ms_bst = np.mean(nus_N2j * mus_N2j, -1)
             mus_bst = mus_N2j[...,0]
             nus_bst = nus_N2j[...,0]
 
@@ -246,7 +246,7 @@ class Fit:
             else:
                 xi = (
                     (self.data.Ys[j] - mus_bst[0]) 
-                    * np.mean(pis_N2j[1:]) / pis_N2j[0] 
+                    * np.mean(pis_N2j) / pis_N2j[0] 
                     * nus_bst[...,0]
                     + ms_bst[...,0]
                 ).reshape(hs.shape)
