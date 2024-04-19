@@ -219,12 +219,12 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         else:
             lamdas = np.array(lamdas)
             
-        Ds = np.array(
+        Ds = np.stack(
             [self.delta(X_N1, G_N1, 
                         self.data.Xs[self.data.G.N1(i)],
                         self.data.G.sub(self.data.G.N1(i)))
-             for i in np.arange(self.data.n_node)]
-        ).T
+             for i in np.arange(self.data.n_node)], -1
+        )
         return np.abs(
             np.sum(self.data.Ts
                    * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 

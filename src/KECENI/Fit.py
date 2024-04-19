@@ -48,8 +48,8 @@ class Fit:
         hs = np.array(hs)
         hf = hs.flatten()
         
-        Ts_N1j = np.repeat(T_N1j[None,:], Xs_N2j.shape[0], 0)
-        Ts_N1k = np.repeat(T_N1k[None,:], Xs_N2k.shape[0], 0)
+        # Ts_N1j = np.repeat(T_N1j[None,:], Xs_N2j.shape[0], 0)
+        # Ts_N1k = np.repeat(T_N1k[None,:], Xs_N2k.shape[0], 0)
         Ds_N2j = self.model.delta(T_N1k[None,None], Xs_N2k[:,None], G_N2k,
                                   T_N1j[None,None], Xs_N2j[None,:], G_N2j)
 
@@ -65,9 +65,9 @@ class Fit:
             if mode == 0:
                 return D.reshape(hs.shape)
         
-            varpi_j = np.mean(self.pi(Ts_N1j, Xs_N2j, G_N2j))
+            varpi_j = np.mean(self.pi(T_N1j[None,:], Xs_N2j, G_N2j))
             m_j = np.cumsum(np.mean(
-                self.mu(Ts_N1j, Xs_N2j, G_N2j)[proj_j], 0
+                self.mu(T_N1j[None,:], Xs_N2j, G_N2j)[proj_j], 0
             ))[hs-1]/hs
 
             if mode == 1:
@@ -89,8 +89,8 @@ class Fit:
             if mode == 0:
                 return D.reshape(hs.shape)
         
-            varpi_j = np.mean(self.pi(Ts_N1j, Xs_N2j, G_N2j))
-            m_j = np.mean(nus_N2j * self.mu(Ts_N1j, Xs_N2j, G_N2j), -1)
+            varpi_j = np.mean(self.pi(T_N1j[None,:], Xs_N2j, G_N2j))
+            m_j = np.mean(nus_N2j * self.mu(T_N1j[None,:], Xs_N2j, G_N2j), -1)
 
             if mode == 1:
                 return D.reshape(hs.shape), m_j.reshape(hs.shape)
@@ -165,29 +165,29 @@ class Fit:
 
         return KernelEstimate(self, i0, T0, G0, lamdas, hs, Ds, xis)
 
-    def EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_sample=200, seed=12345):
+    def EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=120, seed=12345):
         np.random.seed(seed)
         
         lamdas = np.array(lamdas)
         hs = np.array(hs)
         hf = hs.flatten()
         
-        T0_N1i0 = T0[self.data.G.N1(i0)]
+        T0_N1i0 = T0[G0.N1(i0)]
         Xs_N2i0 = self.rX(
-            n_sample**2, G0.N2(i0), G0
+            (n_T+1) * n_X0, G0.N2(i0), G0
         )
-        Xs_N2i0 = Xs_N2i0.reshape((n_sample,n_sample)+Xs_N2i0.shape[-2:])
+        Xs_N2i0 = Xs_N2i0.reshape((n_T+1,n_X0)+Xs_N2i0.shape[-2:])
 
         Ts_N1j = np.concatenate([
             self.data.Ts[None,self.data.G.N1(j)],
-            self.rT(1, self.rX(n_sample-1, self.data.G.N2(j), self.data.G), 
+            self.rT(1, self.rX(n_T, self.data.G.N2(j), self.data.G), 
                     self.data.G.sub(self.data.G.N2(j)))[0]
         ], 0)
         Xs_N2j = np.concatenate([
-            np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_sample, axis=0),
+            np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0),
             self.rX(
-                n_sample*(n_sample-1), self.data.G.N2(j), self.data.G
-            ).reshape((n_sample,n_sample-1)+self.data.Xs[self.data.G.N2(j)].shape)
+                (n_T+1)*n_X, self.data.G.N2(j), self.data.G
+            ).reshape((n_T+1,n_X)+self.data.Xs[self.data.G.N2(j)].shape)
         ], 1)
         
         mus_N2j = self.mu(
@@ -229,25 +229,38 @@ class Fit:
             nus_N2j = np.mean(pnus_N2j, -2)            
 
             Ds_bst = np.mean(Ds_N2j * pnus_N2j, (-2,-1))
-            ms_bst = np.mean(nus_N2j * mus_N2j, -1)
+            ms_bst = np.mean(nus_N2j[...,1:] * mus_N2j[...,1:], -1)
             mus_bst = mus_N2j[...,0]
             nus_bst = nus_N2j[...,0]
 
-            offset = np.mean(
-                (mus_bst * nus_bst - ms_bst)
-                * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
-                         * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),n_sample))), -1
-            )
-            D = Ds_bst[...,0]            
-            xi = (self.data.Ys[j] - mus_bst[0]) * np.mean(pis_N2j) / pis_N2j[0] + ms_bst[...,0]
+            D = Ds_bst[...,0].reshape(hs.shape)
+            
+            if self.data.Ys is None:
+                xi = ms_bst[...,0].reshape(hs.shape)
+            else:
+                xi = (
+                    (self.data.Ys[j] - mus_bst[0]) 
+                    * np.mean(pis_N2j[1:]) / pis_N2j[0] 
+                    * nus_bst[...,0]
+                    + ms_bst[...,0]
+                ).reshape(hs.shape)
+
+            if n_T > 0:
+                offset = np.mean(
+                    (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
+                    * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
+                             * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),n_T))), -1
+                ).reshape(lamdas.shape+hs.shape)
+            else:
+                offset = None
             
         else:
             raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
         
-        return D.reshape(hs.shape), xi.reshape(hs.shape), offset.reshape(lamdas.shape+hs.shape)
+        return D, xi, offset
 
     def kernel_EIF(self, i0, T0, G0=None, 
-                   lamdas=1, hs=1, n_sample=200, n_process=1,
+                   lamdas=1, hs=1, n_T=100, n_X=110, n_X0=120, n_process=1,
                    tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
@@ -259,13 +272,13 @@ class Fit:
         if G0 is None:
             G0 = self.data.G
 
-        # EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_sample=200, seed=12345)
+        # EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=120, seed=12345)
         
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.EIF_j,
                 (
-                    (j, i0, T0, G0, lamdas, hs, n_sample, np.random.randint(12345))
+                    (j, i0, T0, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345))
                     for j in range(self.data.n_node)
                 )
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
@@ -275,14 +288,17 @@ class Fit:
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.EIF_j,
                     (
-                        (j, i0, T0, G0, lamdas, hs, n_sample, np.random.randint(12345))
+                        (j, i0, T0, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345))
                         for j in range(self.data.n_node)
                     )
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
 
         Ds, xis, offsets = list(zip(*r))
 
-        return KernelEstimate(self, i0, T0, G0, lamdas, hs, np.array(Ds), np.array(xis), np.array(offsets))
+        if n_T > 0:
+            return KernelEstimate(self, i0, T0, G0, lamdas, hs, np.array(Ds), np.array(xis), np.array(offsets))
+        else:
+            return KernelEstimate(self, i0, T0, G0, lamdas, hs, np.array(Ds), np.array(xis))
 
     def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
                     lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,

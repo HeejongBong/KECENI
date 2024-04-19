@@ -192,13 +192,13 @@ class KernelRegressionFit(RegressionFit):
             lamdas = np.array(self.lamda)
         else:
             lamdas = np.array(lamdas)
-        Ds = np.array(
+        Ds = np.stack(
             [self.delta(T_N1, X_N2, G_N2, 
                         self.data.Ts[self.data.G.N1(i)],
                         self.data.Xs[self.data.G.N2(i)],
                         self.data.G.sub(self.data.G.N2(i)))
-             for i in np.arange(self.data.n_node)]
-        ).T
+             for i in np.arange(self.data.n_node)], -1
+        )
 
         return np.sum(self.data.Ys
                       * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
