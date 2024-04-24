@@ -474,7 +474,7 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.mu,
-                [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                [(self.data.Ts[None,self.data.G.N1(j)],
                   # Xs_G[:,self.data.G.N2(j)], 
                   np.concatenate([
                       self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
@@ -487,7 +487,7 @@ class Fit:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.mu,
-                    [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                    [(self.data.Ts[None,self.data.G.N1(j)],
                       # Xs_G[:,self.data.G.N2(j)], 
                       np.concatenate([
                           self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
@@ -501,7 +501,7 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.pi,
-                [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                [(self.data.Ts[None,self.data.G.N1(j)],
                   # Xs_G[:,self.data.G.N2(j)], 
                   np.concatenate([
                       self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
@@ -514,7 +514,7 @@ class Fit:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.pi,
-                    [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                    [(self.data.Ts[None,self.data.G.N1(j)],
                       # Xs_G[:,self.data.G.N2(j)], 
                       np.concatenate([
                           self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
@@ -565,7 +565,7 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.mu,
-                [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                [(self.data.Ts[None,self.data.G.N1(j)],
                   # Xs_G[:,self.data.G.N2(j)], 
                   np.concatenate([
                       self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
@@ -578,7 +578,7 @@ class Fit:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.mu,
-                    [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                    [(self.data.Ts[None,self.data.G.N1(j)],
                       # Xs_G[:,self.data.G.N2(j)], 
                       np.concatenate([
                           self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
@@ -592,7 +592,7 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.pi,
-                [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                [(self.data.Ts[None,self.data.G.N1(j)],
                   # Xs_G[:,self.data.G.N2(j)], 
                   np.concatenate([
                       self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
@@ -605,7 +605,7 @@ class Fit:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.pi,
-                    [(np.repeat(self.data.Ts[None,self.data.G.N1(j)], n_sample, 0),
+                    [(self.data.Ts[None,self.data.G.N1(j)],
                       # Xs_G[:,self.data.G.N2(j)], 
                       np.concatenate([
                           self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
