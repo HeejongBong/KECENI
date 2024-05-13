@@ -41,6 +41,11 @@ class KernelEstimate:
         self.offsets = offsets
 
     def est(self, sum_offset=False):
+        ws = np.exp(
+            - self.lamdas.reshape(self.lamdas.shape+(1,)*self.hs.ndim)
+            * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
+        )
+        
         if self.offsets is None or not sum_offset:
             offsets = 0
         else:
@@ -48,13 +53,8 @@ class KernelEstimate:
             
         return np.sum(
             self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
-            * np.exp(- self.lamdas.reshape(self.lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape))
-            + offsets, 0
-        ) / np.sum(
-            np.exp(- self.lamdas.reshape(self.lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)), 0
-        )
+            * ws + offsets, 0
+        ) / np.sum(ws, 0)
 
     def mse_hac(self, hac_kernel=parzen_kernel, abs=False, **kwargs):
         phis = self.get_phi()
@@ -235,20 +235,19 @@ class KernelEstimate:
     #     return np.array(offsets)
 
     def get_phi(self):
+        ws = np.exp(
+            - self.lamdas.reshape(self.lamdas.shape+(1,)*self.hs.ndim)
+            * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
+        )
+        
         if self.offsets is None:
-            offsets = 0
+            offsets = (ws - np.mean(ws, 0)) * self.est()
         else:
             offsets = self.offsets
             
         phis = (
             (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
-             - self.est())
-            * np.exp(- self.lamdas.reshape(self.lamdas.shape+(1,)*self.hs.ndim) 
-                     * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape))
-            + offsets
-        ) / np.sum(
-            np.exp(- self.lamdas.reshape(self.lamdas.shape+(1,)*self.hs.ndim) 
-                   * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)), 0
-        )
+             - self.est()) * ws + offsets
+        ) / np.sum(ws, 0)
 
         return phis
