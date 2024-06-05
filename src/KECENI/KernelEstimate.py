@@ -49,7 +49,8 @@ class KernelEstimate:
         if self.offsets is None or not sum_offset:
             offsets = 0
         else:
-            offsets = self.offsets 
+            # offsets = self.offsets 
+            offsets = 0
             
         return np.sum(
             self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
@@ -240,14 +241,19 @@ class KernelEstimate:
             * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
         )
         
-        if self.offsets is None:
-            offsets = (ws - np.mean(ws, 0)) * self.est()
-        else:
-            offsets = self.offsets
-            
+        # if self.offsets is None:
+        #     offsets = - (ws - np.mean(ws, 0)) * self.est()
+        # else:
+        #     offsets = self.offsets
+
         phis = (
-            (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
-             - self.est()) * ws + offsets
-        ) / np.sum(ws, 0)
+            self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape) * ws
+             - self.est() * self.offsets
+        ) / np.sum(self.offsets, 0)
+            
+        # phis = (
+        #     (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
+        #      - self.est()) * ws + offsets
+        # ) / np.sum(ws, 0)
 
         return phis

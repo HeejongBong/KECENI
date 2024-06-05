@@ -176,9 +176,12 @@ class Fit:
         
         T0_N1i0 = T0[G0.N1(i0)]
         Xs_N2i0 = self.rX(
-            (n_T+1) * n_X0, G0.N2(i0), G0
+            n_X, G0.N2(i0), G0
         )
-        Xs_N2i0 = Xs_N2i0.reshape((n_T+1,n_X0)+Xs_N2i0.shape[-2:])
+        # Xs_N2i0 = self.rX(
+        #     (n_T+1) * n_X0, G0.N2(i0), G0
+        # )
+        # Xs_N2i0 = Xs_N2i0.reshape((n_T+1,n_X0)+Xs_N2i0.shape[-2:])
 
         if n_T > 0:
             Ts_N1j = np.concatenate([
@@ -191,26 +194,42 @@ class Fit:
 
         if n_X > 0:
             Xs_N2j = np.concatenate([
-                np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0),
+                self.data.Xs[None,self.data.G.N2(j)],
                 self.rX(
-                    (n_T+1)*n_X, self.data.G.N2(j), self.data.G
-                ).reshape((n_T+1,n_X)+self.data.Xs[self.data.G.N2(j)].shape)
-            ], 1)
+                    n_X, self.data.G.N2(j), self.data.G
+                )
+            ], 0)
+            # Xs_N2j = np.concatenate([
+            #     np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0),
+            #     self.rX(
+            #         (n_T+1)*n_X, self.data.G.N2(j), self.data.G
+            #     ).reshape((n_T+1,n_X)+self.data.Xs[self.data.G.N2(j)].shape)
+            # ], 1)
         else:
-            Xs_N2j = np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0)
+            Xs_N2j = self.data.Xs[None,None,self.data.G.N2(j)]
+            # Xs_N2j = np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0)
         
         mus_N2j = self.mu(
             Ts_N1j[:,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
         )
         pis_N2j = self.pi(
-            Ts_N1j[0,None], Xs_N2j[0], self.data.G.sub(self.data.G.N2(j))
+            Ts_N1j[0,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
         )
+        # pis_N2j = self.pi(
+        #     Ts_N1j[0,None], Xs_N2j[0], self.data.G.sub(self.data.G.N2(j))
+        # )
         Ds_N2j = self.model.delta(
             Ts_N1j[:,None,None],
-            Xs_N2j[:,None,:], self.data.G.sub(self.data.G.N2(j)),
+            Xs_N2j[None,None,:], self.data.G.sub(self.data.G.N2(j)),
             T0_N1i0[None,None,None],
-            Xs_N2i0[:,:,None], G0.sub(G0.N2(i0))
+            Xs_N2i0[None,:,None], G0.sub(G0.N2(i0))
         )
+        # Ds_N2j = self.model.delta(
+        #     Ts_N1j[:,None,None],
+        #     Xs_N2j[:,None,:], self.data.G.sub(self.data.G.N2(j)),
+        #     T0_N1i0[None,None,None],
+        #     Xs_N2i0[:,:,None], G0.sub(G0.N2(i0))
+        # )
         
         if self.nu_method == 'knn':
             proj_j = np.argpartition(Ds_N2j, hf, -1)[...,:h_max]
@@ -237,10 +256,14 @@ class Fit:
                 ).reshape(hs.shape)
 
             if n_T > 0:
+                # offset = np.mean(
+                #     (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
+                #     * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
+                #              * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),n_T))), -1
+                # ).reshape(lamdas.shape+hs.shape)
                 offset = np.mean(
-                    (mus_bst[1:,None] * nus_bst[1:] - ms_bst[1:])
-                    * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
-                             * Ds_bst[1:].reshape((1,)*lamdas.ndim+(n_T,len(hf)))), -2
+                    np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
+                           * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),n_T))), -1
                 ).reshape(lamdas.shape+hs.shape)
             else:
                 offset = None
@@ -268,14 +291,20 @@ class Fit:
                     + ms_bst[...,0]
                 ).reshape(hs.shape)
 
-            if n_T > 0:
-                offset = np.mean(
-                    (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
-                    * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
-                             * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),n_T))), -1
+            offset = np.mean(
+                    np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
+                           * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),n_T+1))), -1
                 ).reshape(lamdas.shape+hs.shape)
-            else:
-                offset = None
+            
+            # if n_T > 0:
+            #     offset = np.mean(
+            #         (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
+            #         * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
+            #                  * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),n_T))), -1
+            #     ).reshape(lamdas.shape+hs.shape)
+                
+            # else:
+            #     offset = None
             
         else:
             raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
