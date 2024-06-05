@@ -291,25 +291,25 @@ class Fit:
                     + ms_bst[...,0]
                 ).reshape(hs.shape)
 
-            offset = np.mean(
+            wm = np.mean(
                     np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
                            * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),n_T+1))), -1
                 ).reshape(lamdas.shape+hs.shape)
             
-            # if n_T > 0:
-            #     offset = np.mean(
-            #         (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
-            #         * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
-            #                  * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),n_T))), -1
-            #     ).reshape(lamdas.shape+hs.shape)
+            if n_T > 0:
+                offset = np.mean(
+                    (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
+                    * np.exp(- lamdas.reshape(lamdas.shape+(1,1)) 
+                             * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),n_T))), -1
+                ).reshape(lamdas.shape+hs.shape)
                 
-            # else:
-            #     offset = None
+            else:
+                offset = None
             
         else:
             raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
         
-        return D, xi, offset
+        return D, xi, wm, offset
 
     def kernel_EIF(self, i0, T0, G0=None, 
                    lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, n_process=1,
@@ -345,12 +345,14 @@ class Fit:
                     )
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
 
-        Ds, xis, offsets = list(zip(*r))
+        Ds, xis, wms, offsets = list(zip(*r))
 
         if n_T > 0:
-            return KernelEstimate(self, i0, T0, G0, lamdas, hs, np.array(Ds), np.array(xis), np.array(offsets))
+            return KernelEstimate(self, i0, T0, G0, lamdas, hs, 
+                                  np.array(Ds), np.array(xis), np.array(wms), np.array(offsets))
         else:
-            return KernelEstimate(self, i0, T0, G0, lamdas, hs, np.array(Ds), np.array(xis))
+            return KernelEstimate(self, i0, T0, G0, lamdas, hs, 
+                                  np.array(Ds), np.array(xis), np.array(wms))
 
     # def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
     #                 lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
