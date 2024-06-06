@@ -25,7 +25,7 @@ def parzen_kernel(x, bw=None, G=None, const=2, eps=0.05):
     return w
 
 class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, wms, offsets=None):
+    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, wms, offsets=0):
         self.fit = fit
         
         self.i0 = i0
@@ -47,36 +47,27 @@ class KernelEstimate:
         self.offsets = offsets
 
     def est(self, sum_offset=False):
-        if self.offsets is None or not sum_offset:
-            offsets = 0
-        else:
-            offsets = self.offsets 
+        # if self.offsets is None or not sum_offset:
+        #     offsets = 0
+        # else:
+        #     offsets = self.offsets 
             
         return np.sum(
             self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
-            * self.ws + offsets, 0
+            * self.ws, 0
         ) / np.sum(self.ws, 0)
         
     def phis_eif(self):
-        if self.offsets is None:
-            offsets = 0
-        else:
-            offsets = self.offsets
-            
-        phis = (
+        return (
             (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
-             - self.est()) * self.ws + offsets
+             - self.est()) * self.ws + self.offsets
         ) / np.sum(self.ws, 0)
 
-        return phis
-
     def phis_del(self):
-        phis = (
+        return (
             (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
              - self.est()) * (2 * self.ws - self.wms)
         ) / np.sum(self.ws, 0)
-
-        return phis
         
     def mse_eif_hac(self, hac_kernel=parzen_kernel, abs=False, **kwargs):
         phis = self.phis_eif()
