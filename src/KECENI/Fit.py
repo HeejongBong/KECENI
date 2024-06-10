@@ -561,7 +561,7 @@ class Fit:
                 (([k], lamdas, hs, n_sample, mus, pis, ms, varpis,
                   tqdm, level_tqdm+1) 
                  for k in ks_cv)
-            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))
+            ), total=len(ks_cv), leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
@@ -570,7 +570,7 @@ class Fit:
                     (([k], lamdas, hs, n_sample, mus, pis, ms, varpis,
                       None, level_tqdm+1) 
                      for k in ks_cv)
-                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='k', smoothing=0))      
+                ), total=len(ks_cv), leave=None, position=level_tqdm, desc='i_cv', smoothing=0))      
 
         return np.array([r_i[0][0] for r_i in r]), np.array([r_i[1][0] for r_i in r])
     
@@ -685,6 +685,12 @@ class Fit:
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
+
+        if len(K) > 1:
+            tqdm_k = tqdm
+        else:
+            def tqdm_k(iterable, *args, **kwargs):
+                return iterable
                 
         # n_sample = Xs_G.shape[0]
         
@@ -695,7 +701,7 @@ class Fit:
         
         xis = np.zeros(len(K))
         xhs = np.zeros((len(K),)+lamdas.shape+h_shape)
-        for i_k, k in tqdm(enumerate(K), leave=None, position=level_tqdm, desc='k'):
+        for i_k, k in tqdm_k(enumerate(K), total=len(K), leave=None, position=level_tqdm, desc='k'):
             T_N1k = self.data.Ts[self.data.G.N1(k)]
             Xs_N2k = np.concatenate([
                 self.data.Xs[None,self.data.G.N2(k),:], self.rX(n_sample-1, self.data.G.N2(k), self.data.G)
@@ -705,7 +711,7 @@ class Fit:
             xis[i_k] = (self.data.Ys[k] - mus[k,0]) * varpis[k] / pis[k,0] + ms[k]
 
             ds = np.zeros((len(VmK), n_sample, n_sample))
-            for i_j, j in tqdm(enumerate(VmK), leave=None, position=level_tqdm+1, desc='j'):
+            for i_j, j in tqdm(enumerate(VmK), total=len(VmK), leave=None, position=level_tqdm+1, desc='j'):
                 T_N1j = self.data.Ts[self.data.G.N1(j)]
                 Xs_N2j = np.concatenate([
                     self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
