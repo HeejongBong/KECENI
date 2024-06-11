@@ -47,14 +47,14 @@ class KernelEstimate:
         self.offsets = offsets
 
     def est(self, sum_offset=False):
-        # if self.offsets is None or not sum_offset:
-        #     offsets = 0
-        # else:
-        #     offsets = self.offsets 
+        if self.offsets is None or not sum_offset:
+            offsets = 0
+        else:
+            offsets = self.offsets 
             
         return np.sum(
             self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.hs.shape)
-            * self.ws, 0
+            * self.ws + offsets, 0
         ) / np.sum(self.ws, 0)
         
     def phis_eif(self):

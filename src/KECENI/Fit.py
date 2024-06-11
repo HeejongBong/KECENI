@@ -431,7 +431,7 @@ class Fit:
         
     #     return psi
 
-    def average_EIF(self, T0, G0=None, lamdas=1, hs=1, 
+    def average_EIF(self, T0, G0=None, lamdas=1, hs=1, n_T=0, n_X=100,
                     n_process=1, tqdm=None, level_tqdm=0):
         if G0 is None:
             G0 = self.data.G
@@ -467,18 +467,18 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.kernel_EIF,
-                ((i0, T0, G0, lamdas, hs, 0, 0, 1, 1, tqdm, level_tqdm+1) 
+                ((i0, T0, G0, lamdas, hs, n_T, n_X, None, tqdm, level_tqdm+1) 
                  for i0 in range(G0.n_node))
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.kernel_EIF,
-                    ((i0, T0, G0, lamdas, hs, 0, 0, 1, 1, None, level_tqdm+1) 
+                    ((i0, T0, G0, lamdas, hs, n_T, n_X, None, None, level_tqdm+1) 
                      for i0 in range(G0.n_node))
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
-        return np.mean(np.array([r_i.est() for r_i in r]), 0)
+        return r
 
     def loo_cv(self, lamdas, hs, n_cv=100, n_sample=100, n_process=1, 
                tqdm=None, level_tqdm=0):
