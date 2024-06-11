@@ -467,14 +467,14 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.kernel_EIF,
-                ((i0, T0, G0, lamdas, hs, n_T, n_X, None, tqdm, level_tqdm+1) 
+                ((i0, T0, G0, lamdas, hs, n_T, n_X, None, 1, tqdm, level_tqdm+1) 
                  for i0 in range(G0.n_node))
             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.kernel_EIF,
-                    ((i0, T0, G0, lamdas, hs, n_T, n_X, None, None, level_tqdm+1) 
+                    ((i0, T0, G0, lamdas, hs, n_T, n_X, None, 1, None, level_tqdm+1) 
                      for i0 in range(G0.n_node))
                 ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
