@@ -4,6 +4,32 @@ import pandas as pd
 
 from .KernelEstimate import KernelEstimate
 from . import istarmap
+
+class IT_broadcaster:
+    def __init__(self, i0s, T0s):
+        self.n_node = T0s.shape[-1]
+        self.Tfs = T0s.reshape([-1, self.n_node])
+        self.Txs = np.arange(self.Tfs.shape[0]).reshape(T0s.shape[:-1])
+        self.b = np.broadcast(i0s, self.Txs)
+        
+    def __iter__(self):
+        for i0, Tx in self.b:
+            yield i0, self.Tfs[Tx]
+
+class ITX_broadcaster:
+    def __init__(self, i0s, T0s, Xs_N2i0s):
+        self.n_node = T0s.shape[-1]
+        self.ifs = i0s.flatten()
+        self.Tfs = T0s.reshape((-1, self.n_node))       
+        self.Xfs = Xs_N2i0s.flatten()
+        
+        self.ixs = np.arange(self.ifs.shape[0]).reshape(i0s.shape)
+        self.Txs = np.arange(self.Tfs.shape[0]).reshape(T0s.shape[:-1])
+        self.b = np.broadcast(self.ixs, self.Txs)
+        
+    def __iter__(self):
+        for ix, Tx in self.b:
+            yield self.ifs[ix], self.Tfs[Tx], self.Xfs[ix]
         
 class Fit:
     def __init__(self, model, data, nu_method='ksm'):
@@ -43,127 +69,6 @@ class Fit:
         else:
             return np.mean(mus_N2i0)
 
-    # def dissimilarity(self, Y_j, T_N1j, Xs_N2j, G_N2j, T_N1k, Xs_N2k, G_N2k, hs=1, mode=0):
-    #     hs = np.array(hs)
-    #     hf = hs.flatten()
-        
-    #     # Ts_N1j = np.repeat(T_N1j[None,:], Xs_N2j.shape[0], 0)
-    #     # Ts_N1k = np.repeat(T_N1k[None,:], Xs_N2k.shape[0], 0)
-    #     Ds_N2j = self.model.delta(T_N1k[None,None], Xs_N2k[:,None], G_N2k,
-    #                               T_N1j[None,None], Xs_N2j[None,:], G_N2j)
-
-    #     if self.nu_method == 'knn':
-    #         hf = hf.astype(int)
-    #         h_max = np.max(hf)
-            
-    #         proj_j = np.argpartition(Ds_N2j, hf, -1)[:,:h_max]
-    #         D = np.cumsum(np.mean(
-    #             Ds_N2j[np.repeat(np.arange(Xs_N2j.shape[0])[:,None], h_max, -1), proj_j], 0
-    #         ))[hf-1]/hf
-
-    #         if mode == 0:
-    #             return D.reshape(hs.shape)
-        
-    #         varpi_j = np.mean(self.pi(T_N1j[None,:], Xs_N2j, G_N2j))
-    #         m_j = np.cumsum(np.mean(
-    #             self.mu(T_N1j[None,:], Xs_N2j, G_N2j)[proj_j], 0
-    #         ))[hs-1]/hs
-
-    #         if mode == 1:
-    #             return D.reshape(hs.shape), m_j.reshape(hs.shape)
-        
-    #         xi = (Y_j - self.mu(T_N1j, Xs_N2j[0], G_N2j)) \
-    #            * varpi_j/self.pi(T_N1j, Xs_N2j[0], G_N2j) \
-    #            * np.cumsum(np.sum(proj_j==0, 0))[hf-1]/hf \
-    #            + m_j
-            
-    #     elif self.nu_method == 'ksm':
-    #         Ws_N2j = np.exp(- hf[...,None,None] 
-    #                         # * Ds_N2j)
-    #                         * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
-    #         pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
-    #         nus_N2j = np.mean(pnus_N2j, -2)
-    #         D = np.mean(Ds_N2j * pnus_N2j, (-2,-1))
-
-    #         if mode == 0:
-    #             return D.reshape(hs.shape)
-        
-    #         varpi_j = np.mean(self.pi(T_N1j[None,:], Xs_N2j, G_N2j))
-    #         m_j = np.mean(nus_N2j * self.mu(T_N1j[None,:], Xs_N2j, G_N2j), -1)
-
-    #         if mode == 1:
-    #             return D.reshape(hs.shape), m_j.reshape(hs.shape)
-        
-    #         xi = (Y_j - self.mu(T_N1j, Xs_N2j[0], G_N2j)) \
-    #            * varpi_j/self.pi(T_N1j, Xs_N2j[0], G_N2j) \
-    #            * nus_N2j[...,0] \
-    #            + m_j
-            
-    #     else:
-    #         raise('Only k-nearest-neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
-        
-    #     return D.reshape(hs.shape), xi.reshape(hs.shape)
-
-    # def kernel_AIPW(self, i0, T0, Xs_N2i0=None, G0=None, 
-    #                 lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
-    #                 tqdm=None, level_tqdm=0):
-    #     if tqdm is None:
-    #         def tqdm(iterable, *args, **kwargs):
-    #             return iterable
-                
-    #     lamdas = np.array(lamdas)
-    #     hs = np.array(hs)
-
-    #     if G0 is None:
-    #         G0 = self.data.G
-        
-    #     N1i0 = G0.N1(i0)
-    #     N2i0 = G0.N2(i0)
-
-    #     T0_N1i0 = T0[N1i0]
-    #     G0_N2i0 = G0.sub(N2i0)
-        
-    #     if Xs_N2i0 is None:
-    #         Xs_N2i0 = self.rX(n_sample, N2i0, G0)
-        
-    #     # Xs_G = np.concatenate([
-    #     #     self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
-    #     # ], 0)
-
-    #     # dissimilarity(self, Y_j, T_N1j, Xs_N2j, G_N2j, T_N1k, Xs_N2k, G_N2k, hs=1, mode=0)
-        
-    #     if n_process == 1:
-    #         from itertools import starmap
-    #         r = list(tqdm(starmap(self.dissimilarity,
-    #             ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-    #               # Xs_G[:,self.data.G.N2(j)], 
-    #               np.concatenate([
-    #                   self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-    #               ], 0),
-    #               self.data.G.sub(self.data.G.N2(j)),
-    #               T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode)
-    #              for j in range(self.data.n_node))
-    #         ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-        
-    #     elif n_process > 1:
-    #         from multiprocessing import Pool
-    #         with Pool(n_process) as p:   
-    #             r = list(tqdm(p.istarmap(self.dissimilarity, 
-    #                 ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-    #                   # Xs_G[:,self.data.G.N2(j)], 
-    #                   np.concatenate([
-    #                       self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-    #                   ], 0),
-    #                   self.data.G.sub(self.data.G.N2(j)),
-    #                   T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode) 
-    #                  for j in range(self.data.n_node))
-    #             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-
-    #     Ds = np.array(r)[:,0,...]
-    #     xis = np.array(r)[:,1,...]
-
-    #     return KernelEstimate(self, i0, T0, G0, lamdas, hs, Ds, xis)
-
     def EIF_j(self, j, i0, T0, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
 
@@ -178,10 +83,6 @@ class Fit:
         Xs_N2i0 = self.rX(
             n_X, G0.N2(i0), G0
         )
-        # Xs_N2i0 = self.rX(
-        #     (n_T+1) * n_X0, G0.N2(i0), G0
-        # )
-        # Xs_N2i0 = Xs_N2i0.reshape((n_T+1,n_X0)+Xs_N2i0.shape[-2:])
 
         if n_T > 0:
             Ts_N1j = np.concatenate([
@@ -199,15 +100,8 @@ class Fit:
                     n_X, self.data.G.N2(j), self.data.G
                 )
             ], 0)
-            # Xs_N2j = np.concatenate([
-            #     np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0),
-            #     self.rX(
-            #         (n_T+1)*n_X, self.data.G.N2(j), self.data.G
-            #     ).reshape((n_T+1,n_X)+self.data.Xs[self.data.G.N2(j)].shape)
-            # ], 1)
         else:
             Xs_N2j = self.data.Xs[None,None,self.data.G.N2(j)]
-            # Xs_N2j = np.repeat(self.data.Xs[None,None,self.data.G.N2(j)], n_T+1, axis=0)
         
         mus_N2j = self.mu(
             Ts_N1j[:,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
@@ -345,92 +239,6 @@ class Fit:
         return KernelEstimate(self, i0, T0, G0, lamdas, hs, 
                               np.array(Ds), np.array(xis), np.array(wms), np.array(offsets))
 
-    # def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
-    #                 lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2,
-    #                 # return_std=False, hac_kernel = parzen_kernel, 
-    #                 tqdm=None, level_tqdm=0):
-    #     if tqdm is None:
-    #         def tqdm(iterable, *args, **kwargs):
-    #             return iterable
-                
-    #     lamdas = np.array(lamdas)
-    #     hs = np.array(hs)
-
-    #     if G0 is None:
-    #         G0 = self.data.G
-        
-    #     N1i0 = G0.N1(i0)
-    #     N2i0 = G0.N2(i0)
-
-    #     T0_N1i0 = T0[N1i0]
-    #     G0_N2i0 = G0.sub(N2i0)
-        
-    #     if Xs_N2i0 is None:
-    #         Xs_N2i0 = self.rX(n_sample, N2i0, G0)
-        
-    #     # Xs_G = np.concatenate([
-    #     #     self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
-    #     # ], 0)
-
-    #     # dissimilarity(self, Y_j, T_N1j, Xs_N2j, G_N2j, T_N1k, Xs_N2k, G_N2k, hs=1, mode=0)
-        
-    #     if n_process == 1:
-    #         from itertools import starmap
-    #         r = list(tqdm(starmap(self.dissimilarity,
-    #             ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-    #               # Xs_G[:,self.data.G.N2(j)], 
-    #               np.concatenate([
-    #                   self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-    #               ], 0),
-    #               self.data.G.sub(self.data.G.N2(j)),
-    #               T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode)
-    #              for j in range(self.data.n_node))
-    #         ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-        
-    #     elif n_process > 1:
-    #         from multiprocessing import Pool
-    #         with Pool(n_process) as p:   
-    #             r = list(tqdm(p.istarmap(self.dissimilarity, 
-    #                 ((self.data.Ys[j], self.data.Ts[self.data.G.N1(j)],
-    #                   # Xs_G[:,self.data.G.N2(j)], 
-    #                   np.concatenate([
-    #                       self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-    #                   ], 0),
-    #                   self.data.G.sub(self.data.G.N2(j)),
-    #                   T0_N1i0, Xs_N2i0, G0_N2i0, hs, mode) 
-    #                  for j in range(self.data.n_node))
-    #             ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-
-    #     Ds = np.array(r)[:,0,...]
-    #     xis = np.array(r)[:,1,...]
-        
-    #     psi = np.sum(
-    #         xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
-    #         * np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-    #                  * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
-    #     ) / np.sum(
-    #         np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-    #                * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
-    #     )
-
-    #     # if return_std:
-    #     #     phis = (
-    #     #         (xis.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)
-    #     #          - psi)
-    #     #         * np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-    #     #                  * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape))
-    #     #     ) / np.sum(
-    #     #         np.exp(- lamdas.reshape(lamdas.shape+(1,)*hs.ndim) 
-    #     #                * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+hs.shape)), 0
-    #     #     )
-    #     #     return psi, np.sqrt(
-    #     #         np.abs(phis).T[...,None,:] @ hac_kernel(self.data.G.dist(), G=self.data.G) 
-    #     #         @ np.abs(phis).T[...,:,None]
-    #     #     ).T[0,0]
-    #     # else:
-        
-    #     return psi
-
     def average_EIF(self, T0, G0=None, lamdas=1, hs=1, n_T=0, n_X=100,
                     n_process=1, tqdm=None, level_tqdm=0):
         if G0 is None:
@@ -439,26 +247,6 @@ class Fit:
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
-
-        # def DR_estimate(self, i0, T0, Xs_N2i0=None, G0=None, 
-        #                 lamdas=1, hs=1, n_sample=1000, n_process=1, mode=2, 
-        #                 tqdm=None, level_tqdm=0):
-
-        # if n_process == 1:
-        #     from itertools import starmap
-        #     r = list(tqdm(starmap(self.DR_estimate,
-        #         ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
-        #           lamdas, hs, 1, 1, 2, tqdm, level_tqdm+1) 
-        #          for i0 in range(self.data.n_node))
-        #     ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
-        # elif n_process > 1:
-        #     from multiprocessing import Pool
-        #     with Pool(n_process) as p:   
-        #         r = list(tqdm(p.istarmap(self.DR_estimate,
-        #         ((i0, T0, self.data.Xs[None,self.data.G.N2(i0)], self.data.G,
-        #           lamdas, hs, 1, 1, 2, None, level_tqdm+1) 
-        #          for i0 in range(self.data.n_node))
-        #     ), total=self.data.n_node, leave=None, position=level_tqdm, desc='i0', smoothing=0))
 
         # kernel_EIF(self, i0, T0, G0=None, 
         #            lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, n_process=1,
@@ -489,63 +277,20 @@ class Fit:
         lamdas = np.array(lamdas)
         hs = np.array(hs)
 
-        # Xs_G = np.concatenate([
-        #     self.data.Xs[None,...], self.rX(n_sample-1, np.arange(self.data.n_node), self.data.G)
-        # ], 0)
-
         if n_process == 1:
             from itertools import starmap
-            r = list(tqdm(starmap(self.mu,
-                [(self.data.Ts[None,self.data.G.N1(j)],
-                  # Xs_G[:,self.data.G.N2(j)], 
-                  np.concatenate([
-                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-                  ], 0),
-                  self.data.G.sub(self.data.G.N2(j)))
-                 for j in np.arange(self.data.n_node)]
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+            r = list(tqdm(starmap(self.mu_pi_j,
+                map(lambda j: (j, n_T, n_X), range(n_node))
+            ), total=n_node, leave=None, position=0, desc='j', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.mu,
-                    [(self.data.Ts[None,self.data.G.N1(j)],
-                      # Xs_G[:,self.data.G.N2(j)], 
-                      np.concatenate([
-                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-                      ], 0),
-                      self.data.G.sub(self.data.G.N2(j)))
-                     for j in np.arange(self.data.n_node)]
-                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
+                r = list(tqdm(p.istarmap(self.mu_pi_j,
+                    map(lambda j: (j, n_T, n_X), range(n_node))
+                ), total=n_node, leave=None, position=0, desc='j', smoothing=0))
 
-        mus = np.array(r)
-        
-        if n_process == 1:
-            from itertools import starmap
-            r = list(tqdm(starmap(self.pi,
-                [(self.data.Ts[None,self.data.G.N1(j)],
-                  # Xs_G[:,self.data.G.N2(j)], 
-                  np.concatenate([
-                      self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-                  ], 0),
-                  self.data.G.sub(self.data.G.N2(j)))
-                 for j in np.arange(self.data.n_node)]
-            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-        
-        elif n_process > 1:
-            from multiprocessing import Pool
-            with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.pi,
-                    [(self.data.Ts[None,self.data.G.N1(j)],
-                      # Xs_G[:,self.data.G.N2(j)], 
-                      np.concatenate([
-                          self.data.Xs[None,self.data.G.N2(j),:], self.rX(n_sample-1, self.data.G.N2(j), self.data.G)
-                      ], 0),
-                      self.data.G.sub(self.data.G.N2(j)))
-                     for j in np.arange(self.data.n_node)]
-                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0)) 
-
-        pis = np.array(r)
+        mus, pis = np.swapaxes(np.array(r), 1, 0)
         
         ms = np.mean(mus, -1)
         varpis = np.mean(pis, -1)
@@ -762,3 +507,177 @@ class Fit:
             )).reshape(lamdas.shape+h_shape)
 
         return xis, xhs
+
+    def mu_pi_j(self, j, n_T, n_X):
+        if n_T > 0:
+            Ts_N1j = np.concatenate([
+                self.data.Ts[None,self.data.G.N1(j)],
+                self.rT(1, self.rX(n_T, self.data.G.N2(j), self.data.G), 
+                        self.data.G.sub(self.data.G.N2(j)))[0]
+            ], 0)
+        else:
+            Ts_N1j = self.data.Ts[None,self.data.G.N1(j)]
+
+        if n_X > 0:
+            Xs_N2j = np.concatenate([
+                self.data.Xs[None,self.data.G.N2(j)],
+                self.rX(
+                    n_X, self.data.G.N2(j), self.data.G
+                )
+            ], 0)
+        else:
+            Xs_N2j = self.data.Xs[None,None,self.data.G.N2(j)]
+        
+        return (
+            self.mu(Ts_N1j[:,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))),
+            self.pi(Ts_N1j[0,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j)))
+        )
+
+    def AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345):
+        np.random.seed(seed)
+    
+        lamdas = np.array(lamdas)
+        hs = np.array(hs)
+        hf = hs.flatten()
+
+        if n_X0 is None:
+            n_X0 = n_X
+        
+        if n_T > 0:
+            Ts_N1j = np.concatenate([
+                self.data.Ts[None,self.data.G.N1(j)],
+                self.rT(1, self.rX(n_T, self.data.G.N2(j), self.data.G), 
+                        self.data.G.sub(self.data.G.N2(j)))[0]
+            ], 0)
+        else:
+            Ts_N1j = self.data.Ts[None,self.data.G.N1(j)]
+        
+        if n_X > 0:
+            Xs_N2j = np.concatenate([
+                self.data.Xs[None,self.data.G.N2(j)],
+                self.rX(
+                    n_X, self.data.G.N2(j), self.data.G
+                )
+            ], 0)
+        else:
+            Xs_N2j = self.data.Xs[None,None,self.data.G.N2(j)]
+        
+        mus_N2j = self.mu(
+            Ts_N1j[:,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
+        )
+        pis_N2j = self.pi(
+            Ts_N1j[0,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
+        )
+
+        ITb = IT_broadcaster(i0s, T0s)
+        Ds_N2j = np.zeros((ITb.b.size, n_T+1, n_X0, n_X+1))
+        for ix, (i0, T0) in enumerate(ITb):
+            T0_N1i0 = T0[G0.N1(i0)]
+            Xs_N2i0 = self.rX(n_X0, G0.N2(i0), G0)
+            Ds_N2j[ix] = self.model.delta(
+                Ts_N1j[:,None,None],
+                Xs_N2j[None,None,:], self.data.G.sub(self.data.G.N2(j)),
+                T0_N1i0[None,None,None],
+                Xs_N2i0[None,:,None], G0.sub(G0.N2(i0))
+            )
+
+        if self.nu_method == 'ksm':
+            Ws_N2j = np.exp(- hf.reshape((-1,)+(1,)*4)
+                              * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
+            pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
+            nus_N2j = np.mean(pnus_N2j, -2)
+
+            Ds_bst = np.mean(Ds_N2j * pnus_N2j, (-2,-1))
+            mns_bst = np.mean(nus_N2j * mus_N2j, -1)
+            mus_bst = mus_N2j[...,0]
+            nus_bst = nus_N2j[...,0]
+        elif self.nu_method == 'knn':
+            hf = hf.astype(int)
+            h_max = np.max(hf)
+
+            proj_j = np.argpartition(Ds_N2j, hf, -1)[...,:h_max]
+            index_arr = list(np.ix_(*[range(i) for i in Ds_N2j.shape]))
+            index_arr[-1] = proj_j
+
+            Ds_bst = np.moveaxis(np.cumsum(np.mean(Ds_N2j[*index_arr], -2), -1)[...,hf-1]/hf, -1, 0)
+            mns_bst = np.moveaxis(np.cumsum(np.mean(
+                mus_N2j[np.arange(n_T+1)[:,None,None], proj_j], -2
+            ), -1)[...,hf-1]/hf, -1, 0)
+            mus_bst = mus_N2j[...,0]
+            nus_bst = np.moveaxis(np.cumsum(np.sum(proj_j==0, -2), -1)[...,hf-1]/hf, -1, 0)
+        else:
+            raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
+
+        D = Ds_bst[...,0].reshape(hs.shape + ITb.b.shape)
+
+        if self.data.Ys is None:
+            xi = mns_bst[...,0].reshape(hs.shape + ITb.b.shape)
+        else:
+            xi = (
+                (self.data.Ys[j] - mus_bst[0]) 
+                * np.mean(pis_N2j) / pis_N2j[0] 
+                * nus_bst[...,0]
+                + mns_bst[...,0]
+            ).reshape(hs.shape + ITb.b.shape)
+
+        wm = np.mean(
+            np.exp(- lamdas.reshape(lamdas.shape+(1,)*3) 
+                   * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),ITb.b.size,n_T+1))), -1
+        ).reshape(lamdas.shape+hs.shape+ITb.b.shape)
+
+        if n_T > 0:
+            offset = np.mean(
+                (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
+                * np.exp(- lamdas.reshape(lamdas.shape+(1,)*3) 
+                         * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),ITb.b.size,n_T))), -1
+            ).reshape(lamdas.shape+hs.shape+ITb.b.shape)
+        else:
+            offset = np.zeros(lamdas.shape+hs.shape+ITb.b.shape)
+
+        return D, xi, wm, offset
+
+    def kernel_AIPW(self, i0s, T0s=None, G0=None, 
+                    lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, n_process=1,
+                    tqdm=None, level_tqdm=0):
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+                
+        lamdas = np.array(lamdas)
+        hs = np.array(hs)
+
+        if G0 is None:
+            G0 = self.data.G
+            if T0s is None:
+                T0s = self.data.Ts
+        elif T0s is None:
+            raise
+
+        if n_X0 is None:
+            n_X0 = n_X
+
+        # AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345)
+        
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.AIPW_j,
+                (
+                    (j, i0s, T0s, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345))
+                    for j in range(self.data.n_node)
+                )
+            ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+        
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.AIPW_j,
+                    (
+                        (j, i0s, T0s, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345))
+                        for j in range(self.data.n_node)
+                    )
+                ), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+
+        Ds, xis, wms, offsets = list(zip(*r))
+
+        return KernelEstimate(self, i0s, T0s, G0, lamdas, hs, 
+                              np.array(Ds), np.array(xis), np.array(wms), np.array(offsets))
