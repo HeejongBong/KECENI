@@ -39,20 +39,32 @@ class Fit:
     def rX(self, n_sample, N2, G):
         return self.cov_fit.sample(n_sample, N2, G)
     
-    def G_estimate(self, i0, T0, G0=None, n_sample=1000, return_std=False):
+    def G_estimate(self, i0s, T0s, G0=None, n_X=1000, n_process=1, tqdm=None, level_tqdm=0):
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+                
         if G0 is None:
             G0 = self.data.G
 
-        N1i0 = G0.N1(i0)
-        N2i0 = G0.N2(i0)
+        ITb = IT_broadcaster(i0s, T0s)
         
-        Xs_N2i0 = self.rX(n_sample, N2i0, G0)
-        mus_N2i0 = self.mu(T0[None,N1i0], Xs_N2i0, G0.sub(N2i0))
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(
+                lambda i0, T0: np.mean(self.mu(T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0)))),
+                ITb
+            ), total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
-        if return_std:
-            return np.mean(mus_N2i0), np.std(mus_N2i0)/np.sqrt(n_sample)
-        else:
-            return np.mean(mus_N2i0)
+        elif n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(
+                    lambda i0, T0: np.mean(self.mu(T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0)))),
+                    ITb
+                ), total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
+        
+        return np.array(r)
 
     def AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
@@ -149,7 +161,7 @@ class Fit:
 
         if n_T > 0:
             offset = np.mean(
-                (mus_bst[...,1:] * nus_bst[...,1:] - ms_bst[...,1:])
+                (mus_bst[...,1:] * nus_bst[...,1:] - mns_bst[...,1:])
                 * np.exp(- lamdas.reshape(lamdas.shape+(1,)*3) 
                          * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),ITb.b.size,n_T))), -1
             ).reshape(lamdas.shape+hs.shape+ITb.b.shape)
@@ -304,7 +316,7 @@ class Fit:
             r = list(tqdm(starmap(self.loocv_j, map(
                 lambda j: (j, lamdas, hs, n_X, n_X0, np.random.randint(12345)),
                 range(self.data.n_node)
-            )), total=len(ks_cv), leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
+            )), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
@@ -312,9 +324,12 @@ class Fit:
                 r = list(tqdm(p.istarmap(self.loocv_j, map(
                     lambda j: (j, lamdas, hs, n_X, n_X0, np.random.randint(12345)),
                     range(self.data.n_node)
-                )), total=len(ks_cv), leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
+                )), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
 
         xis, Ds, xns = list(zip(*r))
+
+        xis = np.array(xis); Ds = np.array(Ds)
+        xns = np.array(xns)
 
         xhs = np.sum(
             xns
