@@ -64,7 +64,7 @@ class Fit:
                     ITb
                 ), total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
-        return np.array(r)
+        return np.array(r).reshape(ITb.b.shape)
 
     def AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
