@@ -51,20 +51,20 @@ class Fit:
         
         if n_process == 1:
             from itertools import starmap
-            r = list(tqdm(starmap(
-                lambda i0, T0: np.mean(self.mu(T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0)))),
+            r = list(tqdm(starmap(self.mu, map(
+                lambda i0, T0: (T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0))),
                 ITb
-            ), total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
+            )),  total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(
-                    lambda i0, T0: np.mean(self.mu(T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0)))),
+                r = list(tqdm(p.istarmap(self.mu, map(
+                    lambda i0, T0: (T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0))),
                     ITb
-                ), total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
+                )), total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
-        return np.array(r).reshape(ITb.b.shape)
+        return np.mean(r, -1).reshape(ITb.b.shape)
 
     def AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
