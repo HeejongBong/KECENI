@@ -52,7 +52,7 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.mu, map(
-                lambda i0, T0: (T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0))),
+                lambda b_i: (b_i[1][None,G0.N1(b_i[0])], self.rX(n_X, G0.N2(b_i[0]), G0), G0.sub(G0.N2(b_i[0]))),
                 ITb
             )),  total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
@@ -60,7 +60,7 @@ class Fit:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.mu, map(
-                    lambda i0, T0: (T0[None,G0.N1(i0)], self.rX(n_X, G0.N2(i0), G0), G0.sub(G0.N2(i0))),
+                    lambda b_i: (b_i[1][None,G0.N1(b_i[0])], self.rX(n_X, G0.N2(b_i[0]), G0), G0.sub(G0.N2(b_i[0]))),
                     ITb
                 )), total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
