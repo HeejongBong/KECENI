@@ -313,7 +313,7 @@ class Fit:
         
         if n_process == 1:
             from itertools import starmap
-            r = list(tqdm(starmap(self.loocv_j, map(
+            r = list(tqdm(starmap(self.loo_cv_j, map(
                 lambda j: (j, lamdas, hs, n_X, n_X0, np.random.randint(12345)),
                 range(self.data.n_node)
             )), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
@@ -321,7 +321,7 @@ class Fit:
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.loocv_j, map(
+                r = list(tqdm(p.istarmap(self.loo_cv_j, map(
                     lambda j: (j, lamdas, hs, n_X, n_X0, np.random.randint(12345)),
                     range(self.data.n_node)
                 )), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
