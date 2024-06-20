@@ -212,7 +212,7 @@ class Fit:
         return KernelEstimate(self, i0s, T0s, G0, lamdas, hs, 
                               np.array(Ds), np.array(xis), np.array(wms), np.array(offsets))
 
-    def loocv_j(self, j, lamdas=1, hs=1, n_X=110, n_X0=None, seed=12345):
+    def loo_cv_j(self, j, lamdas=1, hs=1, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
     
         lamdas = np.array(lamdas)
@@ -298,7 +298,7 @@ class Fit:
 
         return xi, D, xn
 
-    def loocv(self, lamdas, hs, n_X=100, n_X0=None, n_process=1, tqdm=None, level_tqdm=0):
+    def loo_cv(self, lamdas, hs, n_X=100, n_X0=None, n_process=1, tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
