@@ -21,8 +21,13 @@ class Graph:
             raise('Adj is not a square matrix')
         
         self.n_node = self.Adj.shape[0]
-        self.dist = sparse.csgraph.floyd_warshall(self.Adj)
+        self.dist = None
         self.Zs = Zs
+
+    def get_dist(self)
+        if self.dist is None:
+            self.dist = sparse.csgraph.floyd_warshall(self.Adj)
+        return self.dist
 
     def sub(self, ids):
         if self.Zs is None:
