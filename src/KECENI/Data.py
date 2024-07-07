@@ -24,7 +24,7 @@ class Graph:
         self.dist = None
         self.Zs = Zs
 
-    def get_dist(self)
+    def get_dist(self):
         if self.dist is None:
             self.dist = sparse.csgraph.floyd_warshall(self.Adj)
         return self.dist
