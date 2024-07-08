@@ -212,16 +212,17 @@ class Fit:
         return KernelEstimate(self, i0s, T0s, G0, lamdas, hs, 
                               np.array(Ds), np.array(xis), np.array(wms), np.array(offsets))
 
-    def loo_cv_j(self, j, lamdas=1, hs=1, n_X=110, n_X0=None, seed=12345):
+    def loo_cv_j(self, j, lamdas, hs, i0s, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
     
         lamdas = np.array(lamdas)
         hs = np.array(hs)
         hf = hs.flatten()
 
-        i0s = np.delete(np.arange(self.data.n_node), self.data.G.N2(j))
         T0 = self.data.Ts
         G0 = self.data.G
+
+        nin = np.logical_not(np.isin(i0s, self.data.G.N2(j)))
 
         if n_X0 is None:
             n_X0 = n_X
@@ -246,8 +247,8 @@ class Fit:
         )
         xi = (self.data.Ys[j] - mus_N2j[0]) * np.mean(pis_N2j) / pis_N2j[0] + np.mean(mus_N2j)
 
-        Ds_N2j = np.zeros(i0s.shape + (n_X0, n_X+1))
-        for ix, i0 in enumerate(i0s):
+        Ds_N2j = np.zeros(i0s[nin].shape + (n_X0, n_X+1))
+        for ix, i0 in enumerate(i0s[nin]):
             T0_N1i0 = T0[G0.N1(i0)]
             Xs_N2i0 = self.rX(n_X0, G0.N2(i0), G0)
             Ds_N2j[ix] = self.model.delta(
@@ -285,11 +286,11 @@ class Fit:
         else:
             raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
 
-        D = np.full(hs.shape + (self.data.n_node,), np.inf)
-        D[...,i0s] = Ds_bst.reshape(hs.shape + (-1,))
+        D = np.full(hs.shape + i0s.shape, np.inf)
+        D[...,nin] = Ds_bst.reshape(hs.shape + (-1,))
 
-        xn = np.zeros(hs.shape + (self.data.n_node,))
-        xn[...,i0s] = (
+        xn = np.zeros(hs.shape + i0s.shape)
+        xn[...,nin] = (
             (self.data.Ys[j] - mus_bst) 
             * np.mean(pis_N2j) / pis_N2j[0] 
             * nus_bst
@@ -298,13 +299,16 @@ class Fit:
 
         return xi, D, xn
 
-    def loo_cv(self, lamdas, hs, n_X=100, n_X0=None, n_process=1, tqdm=None, level_tqdm=0):
+    def loo_cv(self, lamdas, hs, i0s=None, n_X=100, n_X0=None, n_process=1, tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
 
         lamdas = np.array(lamdas)
         hs = np.array(hs)
+
+        if i0s is None:
+            i0s = np.arange(self.data.n_node)
 
         if n_X0 is None:
             n_X0 = n_X
@@ -314,7 +318,7 @@ class Fit:
         if n_process == 1:
             from itertools import starmap
             r = list(tqdm(starmap(self.loo_cv_j, map(
-                lambda j: (j, lamdas, hs, n_X, n_X0, np.random.randint(12345)),
+                lambda j: (j, lamdas, hs, i0s, n_X, n_X0, np.random.randint(12345)),
                 range(self.data.n_node)
             )), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
         
@@ -322,14 +326,14 @@ class Fit:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.loo_cv_j, map(
-                    lambda j: (j, lamdas, hs, n_X, n_X0, np.random.randint(12345)),
+                    lambda j: (j, lamdas, hs, i0s, n_X, n_X0, np.random.randint(12345)),
                     range(self.data.n_node)
                 )), total=self.data.n_node, leave=None, position=level_tqdm, desc='i_cv', smoothing=0))
 
         xis, Ds, xns = list(zip(*r))
 
-        xis = np.array(xis); Ds = np.array(Ds)
-        xns = np.array(xns)
+        xis = np.array(xis)[i0s]
+        Ds = np.array(Ds); xns = np.array(xns)
 
         xhs = np.sum(
             xns
