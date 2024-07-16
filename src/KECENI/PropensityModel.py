@@ -209,7 +209,7 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         ).fit(data_mk)
     
         return fit_mk.predict_i(
-            self.data.Ts[k], self.data.Xs[N1k], 
+            1, self.data.Xs[N1k], 
             self.data.G.sub(N1k), lamdas=lamdas
         )
 

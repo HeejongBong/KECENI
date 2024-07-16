@@ -313,7 +313,7 @@ class Fit:
         if n_X0 is None:
             n_X0 = n_X
                         
-        # def loocv_j(self, j, lamdas=1, hs=1, n_X=110, n_X0=None, seed=12345):
+        # def loo_cv_j(self, j, lamdas, hs, i0s, n_X=110, n_X0=None, seed=12345):
         
         if n_process == 1:
             from itertools import starmap
