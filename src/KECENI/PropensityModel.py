@@ -170,48 +170,64 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         self.lamda = lamda
         self.data = data
 
-    def loo_cv(self, lamdas, n_cv=100, n_sample=100, n_process=1, 
-               tqdm=None, leave_tqdm=True):
+    def loo_cv(self, lamdas, i0s=None, n_process=1, tqdm=None, leave_tqdm=True):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
+
+        if i0s is None:
+            i0s = np.arange(self.data.n_node)
                 
-        ks_cv = random.choice(np.arange(self.data.n_node), n_cv, replace=False)
+        # ks_cv = random.choice(np.arange(self.data.n_node), n_cv, replace=False)
         
         if n_process == 1:
             from itertools import starmap
             Ys_cv = list(tqdm(starmap(self.loo_cv_k,
-                ((k, lamdas, n_sample, 1, None, False) 
-                 for k in ks_cv)
-            ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
+                ((k, lamdas, 1, None, False) 
+                 for k in i0s)
+            ), total=len(i0s), leave=leave_tqdm, desc='j'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 Ys_cv = list(tqdm(p.istarmap(self.loo_cv_k,
-                    ((k, lamdas, n_sample, 1, None, False) 
-                     for k in ks_cv)
-                ), total=len(ks_cv), leave=leave_tqdm, desc='j'))
+                    ((k, lamdas, 1, None, False) 
+                     for k in i0s)
+                ), total=len(i0s), leave=leave_tqdm, desc='j'))
 
-        return ks_cv, np.array(Ys_cv).T
+        return self.data.Ts[i0s], np.array(Ys_cv).T
 
-    def loo_cv_k(self, k, lamdas, n_sample=100, n_process=1, 
-                 tqdm = None, leave_tqdm=False):
+    def loo_cv_k(self, k, lamdas, n_process=1, tqdm=None, leave_tqdm=False):
         N1k = self.data.G.N1(k)
         N2k = self.data.G.N2(k)
         mk = np.delete(np.arange(self.data.n_node), N2k)
         
-        data_mk = Data(
-            self.data.Ys[mk], self.data.Ts[mk], 
-            self.data.Xs[mk], self.data.G.sub(mk)
-        )
-        fit_mk = KernelIIDPropensityModel(
-            self.delta
-        ).fit(data_mk)
+        # data_mk = Data(
+        #     self.data.Ys[mk], self.data.Ts[mk], 
+        #     self.data.Xs[mk], self.data.G.sub(mk)
+        # )
+        # fit_mk = KernelIIDPropensityModel(
+        #     self.delta
+        # ).fit(data_mk)
     
-        return fit_mk.predict_i(
-            1, self.data.Xs[N1k], 
-            self.data.G.sub(N1k), lamdas=lamdas
+        # return fit_mk.predict_i(
+        #     1, self.data.Xs[N1k], 
+        #     self.data.G.sub(N1k), lamdas=lamdas
+        # )
+
+        Ds = np.stack(
+            [self.delta(self.data.Xs[N1k], self.data.G.sub(N1k), 
+                        self.data.Xs[self.data.G.N1(i)],
+                        self.data.G.sub(self.data.G.N1(i)))
+             for i in mk], -1
         )
+
+        Ds = Ds - np.min(Ds, -1)[:,None]
+
+        return np.sum(self.data.Ts[mk]
+                      * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
+                               * Ds), -1) \
+               / np.sum(np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
+                               * Ds), -1)
 
     def predict_i(self, T, X_N1, G_N1, lamdas=None):
         if lamdas is None:
