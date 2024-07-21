@@ -156,19 +156,19 @@ class KernelRegressionFit(RegressionFit):
         
         if n_process == 1:
             from itertools import starmap
-            Ys_cv = list(tqdm(starmap(self.loo_cv_k,
+            mus_cv = list(tqdm(starmap(self.loo_cv_k,
                 ((k, lamdas, 1, None, False) 
                  for k in i0s)     
             ), total=len(i0s), leave=leave_tqdm, desc='j'))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                Ys_cv = list(tqdm(p.istarmap(self.loo_cv_k,
+                mus_cv = list(tqdm(p.istarmap(self.loo_cv_k,
                     ((k, lamdas, 1, None, False) 
                      for k in i0s)
                 ), total=len(i0s), leave=leave_tqdm, desc='j'))
 
-        return self.data.Ys[i0s], np.array(Ys_cv).T
+        return self.data.Ys[i0s], np.array(mus_cv).T
 
     def loo_cv_k(self, k, lamdas, n_process=1, tqdm = None, leave_tqdm=False):
         N1k = self.data.G.N1(k)
@@ -197,7 +197,7 @@ class KernelRegressionFit(RegressionFit):
                         self.data.G.sub(self.data.G.N2(i)))
              for i in mk], -1
         )
-        Ds = Ds - np.min(Ds, -1)[:,None]
+        Ds = Ds - np.min(Ds, -1)[...,None]
 
         return np.sum(self.data.Ys[mk]
                       * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
@@ -210,6 +210,7 @@ class KernelRegressionFit(RegressionFit):
             lamdas = np.array(self.lamda)
         else:
             lamdas = np.array(lamdas)
+            
         Ds = np.stack(
             [self.delta(T_N1, X_N2, G_N2, 
                         self.data.Ts[self.data.G.N1(i)],
@@ -217,7 +218,7 @@ class KernelRegressionFit(RegressionFit):
                         self.data.G.sub(self.data.G.N2(i)))
              for i in np.arange(self.data.n_node)], -1
         )
-        Ds = Ds - np.min(Ds, -1)[:,None]
+        Ds = Ds - np.min(Ds, -1)[...,None]
 
         return np.sum(self.data.Ys
                       * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
