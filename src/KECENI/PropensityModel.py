@@ -185,14 +185,14 @@ class KernelIIDPropensityFit(IIDPropensityFit):
             pis_cv = list(tqdm(starmap(self.loo_cv_k,
                 ((k, lamdas, 1, None, False) 
                  for k in i0s)
-            ), total=len(i0s), leave=leave_tqdm, desc='j'))
+            ), total=len(i0s), leave=leave_tqdm, desc='j', smoothing=0))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 pis_cv = list(tqdm(p.istarmap(self.loo_cv_k,
                     ((k, lamdas, 1, None, False) 
                      for k in i0s)
-                ), total=len(i0s), leave=leave_tqdm, desc='j'))
+                ), total=len(i0s), leave=leave_tqdm, desc='j', smoothing=0))
 
         return self.data.Ts[i0s], np.array(pis_cv).T
 

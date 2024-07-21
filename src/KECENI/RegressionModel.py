@@ -159,14 +159,14 @@ class KernelRegressionFit(RegressionFit):
             mus_cv = list(tqdm(starmap(self.loo_cv_k,
                 ((k, lamdas, 1, None, False) 
                  for k in i0s)     
-            ), total=len(i0s), leave=leave_tqdm, desc='j'))
+            ), total=len(i0s), leave=leave_tqdm, desc='j', smoothing=0))
         elif n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 mus_cv = list(tqdm(p.istarmap(self.loo_cv_k,
                     ((k, lamdas, 1, None, False) 
                      for k in i0s)
-                ), total=len(i0s), leave=leave_tqdm, desc='j'))
+                ), total=len(i0s), leave=leave_tqdm, desc='j', smoothing=0))
 
         return self.data.Ys[i0s], np.array(mus_cv).T
 
