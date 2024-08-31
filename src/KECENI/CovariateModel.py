@@ -79,7 +79,7 @@ class CommunityCovariateFit:
         G_N2 = G.sub(N2)
         comm_dict_N2 = pd.Series(G_N2.Zs[:,0]).groupby(G_N2.Zs[:,0]).groups
 
-        Xs_sample = np.zeros((n2, n_sample, self.dX))
+        Xs_sample = np.zeros((n_sample, n2, self.dX))
         for k, v in comm_dict_N2.items():
-            Xs_sample[v] = self.Xs[np.random.choice(self.comm_dict[k], (len(v), n_sample))]
+            Xs_sample[:,v,:] = self.Xs[np.random.choice(self.comm_dict[k], (n_sample, len(v)))]
         return Xs_sample
