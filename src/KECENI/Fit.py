@@ -154,21 +154,19 @@ class Fit:
                 + mns_bst[...,0]
             ).reshape(hs.shape + ITb.b.shape)
 
-        wm = np.mean(
-            np.exp(- lamdas.reshape(lamdas.shape+(1,)*3) 
-                   * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),ITb.b.size,n_T+1))), -1
-        ).reshape(lamdas.shape+hs.shape+ITb.b.shape)
+        ws = np.exp(
+            - lamdas.reshape(lamdas.shape+(1,)*3) 
+            * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),ITb.b.size,n_T+1))
+        )
 
         if n_T > 0:
-            offset = np.mean(
-                (mus_bst[...,1:] * nus_bst[...,1:] - mns_bst[...,1:])
-                * np.exp(- lamdas.reshape(lamdas.shape+(1,)*3) 
-                         * Ds_bst[...,1:].reshape((1,)*lamdas.ndim+(len(hf),ITb.b.size,n_T))), -1
-            ).reshape(lamdas.shape+hs.shape+ITb.b.shape)
+            wm = np.mean(ws, -1).reshape(lamdas.shape+hs.shape+ITb.b.shape)
+            wxm = np.mean(ws * mns_bst, -1).reshape(lamdas.shape+hs.shape+ITb.b.shape)
         else:
-            offset = np.zeros(lamdas.shape+hs.shape+ITb.b.shape)
+            wm = None
+            wxm = None
 
-        return D, xi, wm, offset
+        return D, xi, wm, wxm
 
     def kernel_AIPW(self, i0s, T0s=None, G0=None, 
                     lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, 
@@ -207,10 +205,10 @@ class Fit:
                     range(self.data.n_node)
                 )), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
 
-        Ds, xis, wms, offsets = list(zip(*r))
+        Ds, xis, wms, wxms = list(zip(*r))
 
         return KernelEstimate(self, i0s, T0s, G0, lamdas, hs, 
-                              np.array(Ds), np.array(xis), np.array(wms), np.array(offsets))
+                              np.array(Ds), np.array(xis), np.array(wms), np.array(wxms))
 
     def loo_cv_j(self, j, lamdas, hs, i0s, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)

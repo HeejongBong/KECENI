@@ -3,7 +3,7 @@ import numpy.random as random
 import pandas as pd
 
 class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, wms, offsets=0):
+    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, wms, wxms):
         self.fit = fit
         
         self.i0 = i0
@@ -17,31 +17,26 @@ class KernelEstimate:
         self.xis = xis
 
         self.wms = wms
-        self.offsets = offsets
+        self.wxms = wxms
 
         self.ws = np.exp(
             - self.lamdas.reshape(self.lamdas.shape+(1,)*(self.Ds.ndim-1))
             * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.Ds.shape[1:])
         )
 
-    def est(self, sum_offset=False):
-        if self.offsets is None or not sum_offset:
-            offsets = 0
-        else:
-            offsets = self.offsets 
-            
+    def est(self):
         return np.sum(
             self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
-            * self.ws + offsets, 0
+            * self.ws, 0
         ) / np.sum(self.ws, 0)
         
-    def phis_eif(self):
+    def phis_del(self):
         return (
-            (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
-             - self.est()) * self.ws + self.offsets
+            self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
+            * self.ws - self.wmxs - self.est() * (self.ws - self.wms)
         ) / np.sum(self.ws, 0)
 
-    def phis_del(self):
+    def phis_lapx(self):
         return (
             (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
              - self.est()) * (2 * self.ws - self.wms)
