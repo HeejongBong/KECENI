@@ -33,7 +33,7 @@ class KernelEstimate:
     def phis_del(self):
         return (
             self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
-            * self.ws - self.wmxs - self.est() * (self.ws - self.wms)
+            * self.ws - self.wxms - self.est() * (self.ws - self.wms)
         ) / np.sum(self.ws, 0)
 
     def phis_lapx(self):
