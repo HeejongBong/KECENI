@@ -66,11 +66,14 @@ class Fit:
         
         return np.mean(r, -1).reshape(ITb.b.shape)
 
-    def AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345):
+    def AIPW_j(self, j, i0s, T0s, G0, lamdas=0, hs=0, n_T=100, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
     
         lamdas = np.array(lamdas)
-        hs = np.array(hs)
+        if self.nu_method == 'fixed':
+            hs = np.array(0)
+        else:
+            hs = np.array(hs)
         hf = hs.flatten()
 
         if n_X0 is None:
@@ -103,18 +106,34 @@ class Fit:
         )
 
         ITb = IT_broadcaster(i0s, T0s)
-        Ds_N2j = np.zeros((ITb.b.size, n_T+1, n_X0, n_X+1))
-        for ix, (i0, T0) in enumerate(ITb):
-            T0_N1i0 = T0[G0.N1(i0)]
-            Xs_N2i0 = self.rX(n_X0, G0.N2(i0), G0)
-            Ds_N2j[ix] = self.model.delta(
-                Ts_N1j[:,None,None],
-                Xs_N2j[None,None,:], self.data.G.sub(self.data.G.N2(j)),
-                T0_N1i0[None,None,None],
-                Xs_N2i0[None,:,None], G0.sub(G0.N2(i0))
-            )
 
-        if self.nu_method == 'ksm':
+        if self.nu_method == 'fixed':
+            Ds_N2j = np.zeros((ITb.b.size, n_T+1))
+            for ix, (i0, T0) in enumerate(ITb):
+                T0_N1i0 = T0[G0.N1(i0)]
+                Ds_N2j[ix] = self.model.delta(
+                    Ts_N1j, None, self.data.G.sub(self.data.G.N2(j)),
+                    T0_N1i0, None, G0.sub(G0.N2(i0))
+                )
+        else:
+            Ds_N2j = np.zeros((ITb.b.size, n_T+1, n_X0, n_X+1))
+            for ix, (i0, T0) in enumerate(ITb):
+                T0_N1i0 = T0[G0.N1(i0)]
+                Xs_N2i0 = self.rX(n_X0, G0.N2(i0), G0)
+                Ds_N2j[ix] = self.model.delta(
+                    Ts_N1j[:,None,None],
+                    Xs_N2j[None,None,:], self.data.G.sub(self.data.G.N2(j)),
+                    T0_N1i0[None,None,None],
+                    Xs_N2i0[None,:,None], G0.sub(G0.N2(i0))
+                )
+
+        if self.nu_method == 'fixed':
+            Ds_bst = Ds_N2j
+            mus_bst = mus_N2j[...,0]
+            nus_bst = np.full((ITb.b.size,) + mus_bst.shape, 1)
+            mns_bst = np.mean(mus_N2j, -1) * nus_bst
+
+        elif self.nu_method == 'ksm':
             Ws_N2j = np.exp(- hf.reshape((-1,)+(1,)*4)
                               * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
             pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
@@ -139,6 +158,7 @@ class Fit:
             ), -1)[...,hf-1]/hf, -1, 0)
             mus_bst = mus_N2j[...,0]
             nus_bst = np.moveaxis(np.cumsum(np.sum(proj_j==0, -2), -1)[...,hf-1]/hf, -1, 0)
+        
         else:
             raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
 
@@ -169,14 +189,17 @@ class Fit:
         return D, xi, wm, wxm
 
     def kernel_AIPW(self, i0s, T0s=None, G0=None, 
-                    lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, 
+                    lamdas=0, hs=0, n_T=100, n_X=110, n_X0=None, 
                     n_process=1, tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
                 
         lamdas = np.array(lamdas)
-        hs = np.array(hs)
+        if self.nu_method == 'fixed':
+            hs = np.array(0)
+        else:
+            hs = np.array(hs)
 
         if G0 is None:
             G0 = self.data.G
@@ -210,12 +233,18 @@ class Fit:
         return KernelEstimate(self, i0s, T0s, G0, lamdas, hs, 
                               np.array(Ds), np.array(xis), np.array(wms), np.array(wxms))
 
-    def loo_cv_j(self, j, lamdas, hs, i0s, n_X=110, n_X0=None, seed=12345):
+    def loo_cv_j(self, j, lamdas, hs=0, i0s=None, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)
     
         lamdas = np.array(lamdas)
-        hs = np.array(hs)
+        if self.nu_method == 'fixed':
+            hs = np.array(0)
+        else:
+            hs = np.array(hs)
         hf = hs.flatten()
+
+        if i0s is None:
+            i0s = np.arange(self.data.n_node)
 
         T0 = self.data.Ts
         G0 = self.data.G
@@ -245,18 +274,33 @@ class Fit:
         )
         xi = (self.data.Ys[j] - mus_N2j[0]) * np.mean(pis_N2j) / pis_N2j[0] + np.mean(mus_N2j)
 
-        Ds_N2j = np.zeros(i0s[nin].shape + (n_X0, n_X+1))
-        for ix, i0 in enumerate(i0s[nin]):
-            T0_N1i0 = T0[G0.N1(i0)]
-            Xs_N2i0 = self.rX(n_X0, G0.N2(i0), G0)
-            Ds_N2j[ix] = self.model.delta(
-                T_N1j[None,None],
-                Xs_N2j[None,:], self.data.G.sub(self.data.G.N2(j)),
-                T0_N1i0[None,None],
-                Xs_N2i0[:,None], G0.sub(G0.N2(i0))
-            )
+        if self.nu_method == 'fixed':
+            Ds_N2j = np.zeros(i0s[nin].shape)
+            for ix, i0 in enumerate(i0s[nin]):
+                T0_N1i0 = T0[G0.N1(i0)]
+                Ds_N2j[ix] = self.model.delta(
+                    T_N1j, None, self.data.G.sub(self.data.G.N2(j)),
+                    T0_N1i0, None, G0.sub(G0.N2(i0))
+                )
+        else:
+            Ds_N2j = np.zeros(i0s[nin].shape + (n_X0, n_X+1))
+            for ix, i0 in enumerate(i0s[nin]):
+                T0_N1i0 = T0[G0.N1(i0)]
+                Xs_N2i0 = self.rX(n_X0, G0.N2(i0), G0)
+                Ds_N2j[ix] = self.model.delta(
+                    T_N1j[None,None],
+                    Xs_N2j[None,:], self.data.G.sub(self.data.G.N2(j)),
+                    T0_N1i0[None,None],
+                    Xs_N2i0[:,None], G0.sub(G0.N2(i0))
+                )
 
-        if self.nu_method == 'ksm':
+        if self.nu_method == 'fixed':
+            Ds_bst = Ds_N2j
+            mus_bst = mus_N2j[...,0]
+            nus_bst = np.full(i0s[nin].shape + mus_bst.shape, 1)
+            mns_bst = np.mean(mus_N2j, -1) * nus_bst
+
+        elif self.nu_method == 'ksm':
             Ws_N2j = np.exp(- hf.reshape((-1,)+(1,)*3)
                             * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
             pnus_N2j = Ws_N2j / np.mean(Ws_N2j, -1)[...,None]
@@ -281,6 +325,7 @@ class Fit:
             ), -1)[...,hf-1]/hf, -1, 0)
             mus_bst = mus_N2j[...,0]
             nus_bst = np.moveaxis(np.cumsum(np.sum(proj_j==0, -2), -1)[...,hf-1]/hf, -1, 0)
+        
         else:
             raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
 
@@ -297,13 +342,16 @@ class Fit:
 
         return xi, D, xn
 
-    def loo_cv(self, lamdas, hs, i0s=None, n_X=100, n_X0=None, n_process=1, tqdm=None, level_tqdm=0):
+    def loo_cv(self, lamdas, hs=0, i0s=None, n_X=100, n_X0=None, n_process=1, tqdm=None, level_tqdm=0):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
 
         lamdas = np.array(lamdas)
-        hs = np.array(hs)
+        if self.nu_method == 'fixed':
+            hs = np.array(0)
+        else:
+            hs = np.array(hs)
 
         if i0s is None:
             i0s = np.arange(self.data.n_node)
