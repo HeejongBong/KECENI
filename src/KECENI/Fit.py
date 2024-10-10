@@ -381,13 +381,16 @@ class Fit:
         xis = np.array(xis)[i0s]
         Ds = np.array(Ds); xns = np.array(xns)
 
-        xhs = np.sum(
-            xns
-            * np.exp(- lamdas.reshape(lamdas.shape+(1,)*(Ds.ndim)) 
-                     * Ds), -Ds.ndim
-        ) / np.sum(
-            np.exp(- lamdas.reshape(lamdas.shape+(1,)*(Ds.ndim)) 
-                   * Ds), -Ds.ndim
-        )
+        return xis, KernelEstimate(self, i0s, T0, G0, lamdas, hs, 
+                                   np.array(Ds), np.array(xns))
 
-        return xis, xhs
+        # xhs = np.sum(
+        #     xns
+        #     * np.exp(- lamdas.reshape(lamdas.shape+(1,)*(Ds.ndim)) 
+        #              * Ds), -Ds.ndim
+        # ) / np.sum(
+        #     np.exp(- lamdas.reshape(lamdas.shape+(1,)*(Ds.ndim)) 
+        #            * Ds), -Ds.ndim
+        # )
+
+        # return xis, xhs
