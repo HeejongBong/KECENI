@@ -3,7 +3,7 @@ import numpy.random as random
 import pandas as pd
 
 class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, wms, wxms):
+    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, wms=None, wxms=None):
         self.fit = fit
         
         self.i0 = i0
@@ -15,7 +15,7 @@ class KernelEstimate:
         
         self.Ds = Ds
         self.xis = xis
-
+        
         self.wms = wms
         self.wxms = wxms
 

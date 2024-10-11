@@ -381,7 +381,7 @@ class Fit:
         xis = np.array(xis)[i0s]
         Ds = np.array(Ds); xns = np.array(xns)
 
-        return xis, KernelEstimate(self, i0s, T0, G0, lamdas, hs, 
+        return xis, KernelEstimate(self, i0s, self.data.Ts, self.data.G, lamdas, hs, 
                                    np.array(Ds), np.array(xns))
 
         # xhs = np.sum(
