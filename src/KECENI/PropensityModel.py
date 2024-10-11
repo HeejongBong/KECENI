@@ -157,17 +157,19 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
 
 ###
 class KernelIIDPropensityModel(IIDPropensityModel):
-    def __init__(self, delta, lamda=None, *args, **kwargs):
+    def __init__(self, delta, lamda=None, ths=1e-3, *args, **kwargs):
         self.delta = delta
         self.lamda = lamda
+        self.clip = - np.log(ths)
 
     def fit(self, data):
-        return KernelIIDPropensityFit(self.delta, self.lamda, data)
+        return KernelIIDPropensityFit(self.delta, self.lamda, self.clip, data)
 
 class KernelIIDPropensityFit(IIDPropensityFit):
-    def __init__(self, delta, lamda, data):
+    def __init__(self, delta, lamda, clip, data):
         self.delta = delta
         self.lamda = lamda
+        self.clip = clip
         self.data = data
 
     def loo_cv(self, lamdas, i0s=None, n_process=1, tqdm=None, leave_tqdm=True):
@@ -222,11 +224,11 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         )
         Ds = Ds - np.min(Ds, -1)[...,None]
 
-        return np.sum(self.data.Ts[mk]
-                      * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                               * Ds), -1) \
-               / np.sum(np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                               * Ds), -1)
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
+
+        return np.sum(self.data.Ts[mk] * ws, -1) / np.sum(ws, -1)
 
     def predict_i(self, T, X_N1, G_N1, lamdas=None):
         if lamdas is None:
@@ -241,13 +243,13 @@ class KernelIIDPropensityFit(IIDPropensityFit):
              for i in np.arange(self.data.n_node)], -1
         )
         Ds = Ds - np.min(Ds, -1)[...,None]
+
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
         
         return np.abs(
-            np.sum(self.data.Ts
-                   * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                            * Ds), -1) \
-            / np.sum(np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                           * Ds), -1)
+            np.sum(self.data.Ts * ws, -1) / np.sum(ws, -1)
             - 1 + T
         )
 

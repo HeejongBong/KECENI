@@ -101,18 +101,20 @@ class LogisticRegressionFit(RegressionFit):
 
 ###
 class KernelRegressionModel(RegressionModel):
-    def __init__(self, delta, lamda=None, *args, **kwargs):
+    def __init__(self, delta, lamda=None, ths=1e-3, *args, **kwargs):
         self.delta = delta
         self.lamda = lamda
+        self.clip = - np.log(1e-3)
 
     def fit(self, data):
-        return KernelRegressionFit(self.delta, self.lamda, data)
+        return KernelRegressionFit(self.delta, self.lamda, self.clip, data)
 
 class KernelRegressionFit(RegressionFit):
-    def __init__(self, delta, lamda, data):
+    def __init__(self, delta, lamda, clip, data):
         self.delta = delta
         self.lamda = lamda
         self.data = data
+        self.clip = clip
 
     def loo_cv_old(self, lamdas, n_cv=100, tqdm=None, leave_tqdm=False):
         if tqdm is None:
@@ -199,11 +201,11 @@ class KernelRegressionFit(RegressionFit):
         )
         Ds = Ds - np.min(Ds, -1)[...,None]
 
-        return np.sum(self.data.Ys[mk]
-                      * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                               * Ds), -1) \
-               / np.sum(np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                               * Ds), -1)
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
+
+        return np.sum(self.data.Ys[mk] * ws, -1) / np.sum(ws, -1)
 
     def predict(self, T_N1, X_N2, G_N2, lamdas=None):
         if lamdas is None:
@@ -220,8 +222,8 @@ class KernelRegressionFit(RegressionFit):
         )
         Ds = Ds - np.min(Ds, -1)[...,None]
 
-        return np.sum(self.data.Ys
-                      * np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                               * Ds), -1) \
-               / np.sum(np.exp(- lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) 
-                               * Ds), -1)
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
+
+        return np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
