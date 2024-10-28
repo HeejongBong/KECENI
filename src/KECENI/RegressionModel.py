@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.random as random
+import scipy.linalg as la
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
 from .Data import Data
@@ -55,7 +56,10 @@ class LinearRegressionModel(RegressionModel):
             for j in np.arange(data.n_node)])
 
         model_fit = self.model.fit(Zs, data.Ys)
-        model_fit.sigma_ = np.sqrt(np.mean((data.Ys - model_fit.predict(Zs))**2))
+        model_fit.Zs_ = Zs
+        model_fit.Ys_ = data.Ys
+        model_fit.residuals_ = data.Ys - model_fit.predict(Zs)
+        model_fit.sigma_ = np.sqrt(np.mean((model_fit.residuals_)**2))
         return LinearRegressionFit(self.summary, model_fit)
 
 class LinearRegressionFit(RegressionFit):
@@ -68,13 +72,25 @@ class LinearRegressionFit(RegressionFit):
         dZ = Z.shape[-1]
         return self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
 
+    def predict_with_residual(self, T_N1, X_N2, G_N2):
+        Z = self.summary(T_N1, X_N2, G_N2)
+        dZ = Z.shape[-1]
+
+        mu = self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
+        res = - (
+            Z @ la.inv(self.model_fit.Zs_.T @ self.model_fit.Zs_)
+            @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
+        )
+
+        return mu, res
+
 
 
 ###
 class LogisticRegressionModel(RegressionModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
-        self.model = LogisticRegression(*args, **kwargs)
+        self.model = LogisticRegression(penalty=None, *args, **kwargs)
 
     def fit(self, data):
         Zs = np.array([
@@ -84,6 +100,9 @@ class LogisticRegressionModel(RegressionModel):
             for j in np.arange(data.n_node)])
         
         model_fit = self.model.fit(Zs, data.Ys)
+        model_fit.Zs_ = Zs
+        model_fit.Ys_ = data.Ys
+        model_fit.residuals_ = data.Ys - model_fit.predict_proba(Zs)[:,1]
         return LogisticRegressionFit(self.summary, model_fit)
 
 class LogisticRegressionFit(RegressionFit):
@@ -95,6 +114,23 @@ class LogisticRegressionFit(RegressionFit):
         Z = self.summary(T_N1, X_N2, G_N2)
         dZ = Z.shape[-1]
         return self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
+
+    def predict_with_residual(self, T_N1, X_N2, G_N2):
+        Z = self.summary(T_N1, X_N2, G_N2)
+        dZ = Z.shape[-1]
+
+        mu = self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
+        
+        var = np.abs(self.model_fit.residuals_) * (1 - np.abs(self.model_fit.residuals_))
+        var_i = (1 - mu) * mu
+
+        res = - (
+            (var_i[...,None] * Z) 
+            @ la.pinv((self.model_fit.Zs_.T * var) @ self.model_fit.Zs_)
+            @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
+        )
+        
+        return mu, res
 
 
 
@@ -226,4 +262,30 @@ class KernelRegressionFit(RegressionFit):
         ws = np.zeros(lamDs.shape)
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
-        return np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
+        mus = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
+
+        return mus
+
+    def predict_with_residual(self, T_N1, X_N2, G_N2, lamdas=None):
+        if lamdas is None:
+            lamdas = np.array(self.lamda)
+        else:
+            lamdas = np.array(lamdas)
+            
+        Ds = np.stack(
+            [self.delta(T_N1, X_N2, G_N2, 
+                        self.data.Ts[self.data.G.N1(i)],
+                        self.data.Xs[self.data.G.N2(i)],
+                        self.data.G.sub(self.data.G.N2(i)))
+             for i in np.arange(self.data.n_node)], -1
+        )
+        Ds = Ds - np.min(Ds, -1)[...,None]
+
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
+
+        mu = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
+        res = (self.data.Ys - mu[...,None]) * ws / np.sum(ws, -1)[...,None]
+
+        return mu, res

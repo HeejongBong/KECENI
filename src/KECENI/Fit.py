@@ -98,10 +98,17 @@ class Fit:
         else:
             Xs_N2j = self.data.Xs[None,self.data.G.N2(j)]
         
-        mus_N2j = self.mu(
+        # mus_N2j = self.mu(
+        #     Ts_N1j[:,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
+        # )
+        # pis_N2j = self.pi(
+        #     Ts_N1j[0,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
+        # )
+
+        mus_N2j, res_mu = self.mu_fit.predict_with_residual(
             Ts_N1j[:,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
         )
-        pis_N2j = self.pi(
+        pis_N2j, res_pi = self.pi_fit.predict_with_residual(
             Ts_N1j[0,None], Xs_N2j, self.data.G.sub(self.data.G.N2(j))
         )
 
@@ -133,6 +140,9 @@ class Fit:
             nus_bst = np.full((ITb.b.size,) + mus_bst.shape, 1)
             mns_bst = np.mean(mus_N2j, -1) * nus_bst
 
+            res_mb = res_mu[...,0,:]
+            res_mn = np.mean(res_mu, -2) * nus_bst[...,None]
+
         elif self.nu_method == 'ksm':
             Ws_N2j = np.exp(- hf.reshape((-1,)+(1,)*4)
                               * (Ds_N2j - np.min(Ds_N2j, -1)[...,None]))
@@ -143,6 +153,9 @@ class Fit:
             mns_bst = np.mean(nus_N2j * mus_N2j, -1)
             mus_bst = mus_N2j[...,0]
             nus_bst = nus_N2j[...,0]
+
+            res_mb = res_mu[...,0,:]
+            res_mn = np.mean(res_mu * nus_bst[...,None], -2)
             
         elif self.nu_method == 'knn':
             hf = hf.astype(int)
@@ -158,7 +171,12 @@ class Fit:
             ), -1)[...,hf-1]/hf, -1, 0)
             mus_bst = mus_N2j[...,0]
             nus_bst = np.moveaxis(np.cumsum(np.sum(proj_j==0, -2), -1)[...,hf-1]/hf, -1, 0)
-        
+
+            res_mb = res_mu[...,0,:]
+            res_mn = np.moveaxis(np.cumsum(np.mean(
+                res_mu[np.arange(n_T+1)[:,None,None], proj_j,:], -3
+            ), -2)[...,hf-1,:]/hf[:,None], -2, 0)
+                    
         else:
             raise('Only knearest neighborhood (knn) and kernel smoothing (ksm) methods are supported now')
 
@@ -174,6 +192,15 @@ class Fit:
                 + mns_bst[...,0]
             ).reshape(hs.shape + ITb.b.shape)
 
+        residual = (
+            - np.mean(pis_N2j) / (pis_N2j[0]**2) * (self.data.Ys[j] - mus_bst[0]) 
+            * res_pi[0] * nus_bst[...,0,None]
+            + 1 / pis_N2j[0] * (self.data.Ys[j] - mus_bst[0]) 
+            * np.mean(res_pi, 0) * nus_bst[...,0,None]
+            - np.mean(pis_N2j) / pis_N2j[0] * res_mb[...,0,:] * nus_bst[...,0,None]
+            + res_mn[...,0,:]
+        ).reshape(hs.shape + ITb.b.shape + (-1,))
+
         ws = np.exp(
             - lamdas.reshape(lamdas.shape+(1,)*3) 
             * Ds_bst.reshape((1,)*lamdas.ndim+(len(hf),ITb.b.size,n_T+1))
@@ -186,7 +213,7 @@ class Fit:
             wm = None
             wxm = None
 
-        return D, xi, wm, wxm
+        return D, xi, residual, wm, wxm
 
     def kernel_AIPW(self, i0s, T0s=None, G0=None, 
                     lamdas=0, hs=0, n_T=100, n_X=110, n_X0=None, 
@@ -211,27 +238,60 @@ class Fit:
         if n_X0 is None:
             n_X0 = n_X
 
-        # AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345)
-        
-        if n_process == 1:
-            from itertools import starmap
-            r = list(tqdm(starmap(self.AIPW_j, map(
-                lambda j: (j, i0s, T0s, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345)),
-                range(self.data.n_node)
-            )), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
-        
-        elif n_process > 1:
-            from multiprocessing import Pool
-            with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.AIPW_j, map(
-                    lambda j: (j, i0s, T0s, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345)),
-                    range(self.data.n_node)
-                )), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+        ITb = IT_broadcaster(i0s, T0s)
 
-        Ds, xis, wms, wxms = list(zip(*r))
+        # AIPW_j(self, j, i0s, T0s, G0, lamdas=1, hs=1, n_T=100, n_X=110, n_X0=None, seed=12345)
+
+        Ds = []; xis = []
+        offsets = np.zeros((self.data.n_node,) + lamdas.shape + hs.shape + ITb.b.shape)
+        ws = []; wms = []; wxms = []
+        for j in tqdm(range(self.data.n_node), total=self.data.n_node, leave=None, 
+                      position=level_tqdm, desc='j', smoothing=0):
+            D, xi, residual, wm, wxm = self.AIPW_j(
+                j, i0s, T0s, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345)
+            )
+
+            w = np.exp(
+                - lamdas.reshape(lamdas.shape+(1,)*D.ndim)
+                * D.reshape((1,)*lamdas.ndim+D.shape)
+            )
+            offsets += np.moveaxis(w[...,None] * residual, -1, 0)
+
+            Ds.append(D); xis.append(xi)
+            ws.append(w); wms.append(wm); wxms.append(wxm)
+
+        offsets = offsets / np.sum(ws, 0)
+            
+        
+        # if n_process == 1:
+        #     from itertools import starmap
+        #     r = list(tqdm(starmap(self.AIPW_j, map(
+        #         lambda j: (j, i0s, T0s, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345)),
+        #         range(self.data.n_node)
+        #     )), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+        
+        # elif n_process > 1:
+        #     from multiprocessing import Pool
+        #     with Pool(n_process) as p:   
+        #         r = list(tqdm(p.istarmap(self.AIPW_j, map(
+        #             lambda j: (j, i0s, T0s, G0, lamdas, hs, n_T, n_X, n_X0, np.random.randint(12345)),
+        #             range(self.data.n_node)
+        #         )), total=self.data.n_node, leave=None, position=level_tqdm, desc='j', smoothing=0))
+
+        # Ds, xis, residuals, wms, wxms = list(zip(*r))
+        # Ds = np.array(Ds); residuals = np.array(residuals)
+
+        # ws = np.exp(
+        #     - lamdas.reshape(lamdas.shape+(1,)*(Ds.ndim-1))
+        #     * Ds.reshape((self.data.n_node,)+(1,)*lamdas.ndim+Ds.shape[1:])
+        # )
+        # offset = np.moveaxis(
+        #     np.sum(ws[...,None] * residuals[:,None,...], 0) / np.sum(ws, 0)[...,None],
+        #     -1, 0
+        # )
 
         return KernelEstimate(self, i0s, T0s, G0, lamdas, hs, 
-                              np.array(Ds), np.array(xis), np.array(wms), np.array(wxms))
+                              np.array(Ds), np.array(xis), offsets, np.array(wms), np.array(wxms))
 
     def loo_cv_j(self, j, lamdas, hs=0, i0s=None, n_X=110, n_X0=None, seed=12345):
         np.random.seed(seed)

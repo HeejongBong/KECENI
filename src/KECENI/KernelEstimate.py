@@ -3,7 +3,7 @@ import numpy.random as random
 import pandas as pd
 
 class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, wms=None, wxms=None):
+    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, offsets=None, wms=None, wxms=None):
         self.fit = fit
         
         self.i0 = i0
@@ -15,7 +15,8 @@ class KernelEstimate:
         
         self.Ds = Ds
         self.xis = xis
-        
+
+        self.offsets = offsets
         self.wms = wms
         self.wxms = wxms
 
@@ -41,3 +42,9 @@ class KernelEstimate:
             (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
              - self.est()) * (2 * self.ws - self.wms)
         ) / np.sum(self.ws, 0)
+
+    def phis_dr(self):
+        return (
+            (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
+             - self.est()) * self.ws
+        ) / np.sum(self.ws, 0) + self.offsets

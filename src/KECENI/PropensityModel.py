@@ -1,6 +1,7 @@
 import numpy as np
 import numpy.random as random
 import scipy.stats as stats
+import scipy.linalg as la
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
 from .Data import Data
@@ -58,7 +59,12 @@ class IIDPropensityModel(PropensityModel):
         
 class IIDPropensityFit(PropensityFit):
     def predict_i(self, T, X_N1, G_N1):
-        return 0
+        T = np.array(T)
+        return np.zeros(T.shape)
+
+    def predict_with_residual_i(self, T, X_N1, G_N1):
+        T = np.array(T)
+        return np.zeros(T.shape), np.zeros(T.shape)
 
     def predict(self, T_N1, X_N2, G_N2, *args, **kwargs):
         n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
@@ -66,6 +72,20 @@ class IIDPropensityFit(PropensityFit):
             T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
             *args, **kwargs
         ) for j in G_N2.N1(0)], 0)
+
+    def predict_with_residual(self, T_N1, X_N2, G_N2, *args, **kwargs):
+        n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
+
+        pi_is, res_is = list(zip(*[self.predict_with_residual_i(
+            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
+            *args, **kwargs
+        ) for j in G_N2.N1(0)]))
+        pi_is = np.array(pi_is); res_is = np.array(res_is)
+
+        pi = np.prod(pi_is, 0)
+        res = np.sum((pi / pi_is)[...,None] * res_is, 0)
+        
+        return pi, res
 
     def sample_i(self, n_sample, X_N1, G_N1):
         return np.zeros(n_sample)
@@ -122,7 +142,7 @@ class LinearIIDPropensityFit(IIDPropensityFit):
 class LogisticIIDPropensityModel(IIDPropensityModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
-        self.model = LogisticRegression(*args, **kwargs)
+        self.model = LogisticRegression(penalty=None, *args, **kwargs)
 
     def fit(self, data):
         Zs = np.array([
@@ -131,6 +151,9 @@ class LogisticIIDPropensityModel(IIDPropensityModel):
             for j in np.arange(data.n_node)])
         
         model_fit = self.model.fit(Zs, data.Ts)
+        model_fit.Zs_ = Zs
+        model_fit.Ts_ = data.Ts
+        model_fit.residuals_ = data.Ts - model_fit.predict_proba(Zs)[:,1]
         return LogisticIIDPropensityFit(self.summary, model_fit)
 
 class LogisticIIDPropensityFit(IIDPropensityFit):
@@ -145,6 +168,26 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
             self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1])
             - T
         )
+
+    def predict_with_residual_i(self, T, X_N1, G_N1):
+        Z = self.summary(X_N1, G_N1)
+        dZ = Z.shape[-1]
+
+        pi_i = np.abs(
+            self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1])
+            - T
+        )
+        
+        var = np.abs(self.model_fit.residuals_) * (1 - np.abs(self.model_fit.residuals_))
+        var_i = (1 - pi_i) * pi_i
+        
+        res_i = - (
+            (((2*T - 1) * var_i)[...,None] * Z) 
+            @ la.pinv((self.model_fit.Zs_.T * var) @ self.model_fit.Zs_)
+            @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
+        )
+        
+        return pi_i, res_i
 
     def sample_i(self, n_sample, X_N1, G_N1):
         Z = self.summary(X_N1, G_N1)
@@ -230,7 +273,7 @@ class KernelIIDPropensityFit(IIDPropensityFit):
 
         return np.sum(self.data.Ts[mk] * ws, -1) / np.sum(ws, -1)
 
-    def predict_i(self, T, X_N1, G_N1, lamdas=None):
+    def predict_i(self, T, X_N1, G_N1, lamdas=None, residual=False):
         if lamdas is None:
             lamdas = np.array(self.lamda)
         else:
@@ -252,6 +295,29 @@ class KernelIIDPropensityFit(IIDPropensityFit):
             np.sum(self.data.Ts * ws, -1) / np.sum(ws, -1)
             - 1 + T
         )
+
+    def predict_with_residual_i(self, T, X_N1, G_N1, lamdas=None):
+        if lamdas is None:
+            lamdas = np.array(self.lamda)
+        else:
+            lamdas = np.array(lamdas)
+            
+        Ds = np.stack(
+            [self.delta(X_N1, G_N1, 
+                        self.data.Xs[self.data.G.N1(i)],
+                        self.data.G.sub(self.data.G.N1(i)))
+             for i in np.arange(self.data.n_node)], -1
+        )
+        Ds = Ds - np.min(Ds, -1)[...,None]
+
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
+
+        pi_i = np.sum((np.array(T)[...,None] == self.data.Ts) * ws, -1) / np.sum(ws, -1)
+        res_i = ((np.array(T)[...,None] == self.data.Ts) - pi_i[...,None]) * ws / np.sum(ws, -1)[...,None]
+        
+        return pi_i, res_i
 
     def sample_i(self, n_sample, X_N1, G_N1, lamdas=None):
         if lamdas is None:
