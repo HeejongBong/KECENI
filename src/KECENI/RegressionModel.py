@@ -19,6 +19,9 @@ class RegressionFit:
 
     def predict(self, T_N1, X_N2, G_N2):
         pass
+    
+    def predict_with_residual(self, T_N1, X_N2, G_N2):
+        pass
 
 
 
@@ -37,7 +40,12 @@ class FittedRegressionFit(RegressionFit):
         self.mu = mu
 
     def predict(self, T_N1, X_N2, G_N2):
-        return self.mu(T_N1, X_N2, G_N2)    
+        mu = self.mu(T_N1, X_N2, G_N2) 
+        return mu
+    
+    def predict_with_residual(self, T_N1, X_N2, G_N2):
+        mu = self.mu(T_N1, X_N2, G_N2) 
+        return mu, np.zeros(mu.shape+(1,))
         
 
 
@@ -286,6 +294,9 @@ class KernelRegressionFit(RegressionFit):
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
         mu = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
-        res = (self.data.Ys - mu[...,None]) * ws / np.sum(ws, -1)[...,None]
+        res = res = - (
+            (self.data.Ys - mu[...,None]) * ws 
+            / np.sum(ws, -1)[...,None]
+        )
 
         return mu, res
