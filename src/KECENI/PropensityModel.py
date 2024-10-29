@@ -156,18 +156,23 @@ class IIDPropensityFit(PropensityFit):
 class LogisticIIDPropensityModel(IIDPropensityModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
-        self.model = LogisticRegression(penalty=None, *args, **kwargs)
+        self.model = LogisticRegression(penalty=None, fit_intercpet=False,
+                                        *args, **kwargs)
 
     def fit(self, data):
         Zs = np.array([
             self.summary(data.Xs[data.G.N1(j)],
                          data.G.sub(data.G.N1(j)))
             for j in np.arange(data.n_node)])
+        Zs = np.concatenate([np.full(Zs.shape[:-1]+(1,), 1), Zs], -1)
         
         model_fit = self.model.fit(Zs, data.Ts)
         model_fit.Zs_ = Zs
         model_fit.Ts_ = data.Ts
-        model_fit.residuals_ = data.Ts - model_fit.predict_proba(Zs)[:,1]
+        model_fit.residuals_ = data.Ts - model_fit.predict_proba(Zs)[...,-1]
+        model_fit.var_ = (
+            np.abs(model_fit.residuals_) * (1 - np.abs(model_fit.residuals_))
+        )
         return LogisticIIDPropensityFit(self.summary, model_fit)
 
 class LogisticIIDPropensityFit(IIDPropensityFit):
@@ -176,8 +181,10 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
         self.model_fit = model_fit
 
     def predict_i(self, T, X_N1, G_N1):
-        Z = self.summary(X_N1, G_N1)
+        Z = self.summary(X_N1, G_N1)        
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
+        
         return np.abs(
             self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1])
             - T
@@ -185,19 +192,18 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
 
     def predict_with_residual_i(self, T, X_N1, G_N1):
         Z = self.summary(X_N1, G_N1)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
 
         pi_i = np.abs(
             self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1])
             - T
         )
-        
-        var = np.abs(self.model_fit.residuals_) * (1 - np.abs(self.model_fit.residuals_))
         var_i = (1 - pi_i) * pi_i
-        
         res_i = - (
             (((2*T - 1) * var_i)[...,None] * Z) 
-            @ la.pinv((self.model_fit.Zs_.T * var) @ self.model_fit.Zs_)
+            @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
+                      @ self.model_fit.Zs_)
             @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
         )
         

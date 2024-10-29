@@ -54,7 +54,7 @@ class FittedRegressionFit(RegressionFit):
 class LinearRegressionModel(RegressionModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
-        self.model = LinearRegression(*args, **kwargs)
+        self.model = LinearRegression(fit_intercept=False, *args, **kwargs)
 
     def fit(self, data):
         Zs = np.array([
@@ -62,6 +62,7 @@ class LinearRegressionModel(RegressionModel):
                          data.Xs[data.G.N2(j)],
                          data.G.sub(data.G.N2(j)))
             for j in np.arange(data.n_node)])
+        Zs = np.concatenate([np.full(Zs.shape[:-1]+(1,), 1), Zs], -1)
 
         model_fit = self.model.fit(Zs, data.Ys)
         model_fit.Zs_ = Zs
@@ -77,11 +78,13 @@ class LinearRegressionFit(RegressionFit):
         
     def predict(self, T_N1, X_N2, G_N2):
         Z = self.summary(T_N1, X_N2, G_N2)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
         return self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
 
     def predict_with_residual(self, T_N1, X_N2, G_N2):
         Z = self.summary(T_N1, X_N2, G_N2)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
 
         mu = self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
@@ -98,7 +101,8 @@ class LinearRegressionFit(RegressionFit):
 class LogisticRegressionModel(RegressionModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
-        self.model = LogisticRegression(penalty=None, *args, **kwargs)
+        self.model = LogisticRegression(penalty=None, fit_intercept=False,
+                                        *args, **kwargs)
 
     def fit(self, data):
         Zs = np.array([
@@ -106,11 +110,15 @@ class LogisticRegressionModel(RegressionModel):
                          data.Xs[data.G.N2(j)],
                          data.G.sub(data.G.N2(j)))
             for j in np.arange(data.n_node)])
+        Zs = np.concatenate([np.full(Zs.shape[:-1]+(1,), 1), Zs], -1)
         
         model_fit = self.model.fit(Zs, data.Ys)
         model_fit.Zs_ = Zs
         model_fit.Ys_ = data.Ys
         model_fit.residuals_ = data.Ys - model_fit.predict_proba(Zs)[:,1]
+        model_fit.var_ = (
+            np.abs(model_fit.residuals_) * (1 - np.abs(model_fit.residuals_))
+        )
         return LogisticRegressionFit(self.summary, model_fit)
 
 class LogisticRegressionFit(RegressionFit):
@@ -120,21 +128,21 @@ class LogisticRegressionFit(RegressionFit):
 
     def predict(self, T_N1, X_N2, G_N2):
         Z = self.summary(T_N1, X_N2, G_N2)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
         return self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
 
     def predict_with_residual(self, T_N1, X_N2, G_N2):
         Z = self.summary(T_N1, X_N2, G_N2)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
 
         mu = self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
-        
-        var = np.abs(self.model_fit.residuals_) * (1 - np.abs(self.model_fit.residuals_))
-        var_i = (1 - mu) * mu
-
+        var = (1 - mu) * mu
         res = - (
-            (var_i[...,None] * Z) 
-            @ la.pinv((self.model_fit.Zs_.T * var) @ self.model_fit.Zs_)
+            (var[...,None] * Z) 
+            @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
+                      @ self.model_fit.Zs_)
             @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
         )
         
