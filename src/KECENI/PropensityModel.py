@@ -156,7 +156,7 @@ class IIDPropensityFit(PropensityFit):
 class LogisticIIDPropensityModel(IIDPropensityModel):
     def __init__(self, summary, *args, **kwargs):
         self.summary = summary
-        self.model = LogisticRegression(penalty=None, fit_intercpet=False,
+        self.model = LogisticRegression(penalty=None, fit_intercept=False,
                                         *args, **kwargs)
 
     def fit(self, data):
