@@ -25,7 +25,7 @@ class Fit:
         self.pi_fit = self.model.pi_model.fit(data)
         self.cov_fit = self.model.cov_model.fit(data)
         
-        self.xis = None
+        self.n_X = None
         
     def mu(self, T_N1, X_N2, G_N2):
         return self.mu_fit.predict(T_N1, X_N2, G_N2)
@@ -159,7 +159,7 @@ class Fit:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
             
-        if self.xis is None:
+        if self.n_X != n_X:
             self.set_xi(n_X, n_process, tqdm, level_tqdm)
                 
         lamdas = np.array(lamdas)
@@ -215,7 +215,7 @@ class Fit:
         if i0s is None:
             i0s = np.arange(self.data.n_node)
             
-        if self.xis is None:
+        if self.n_X != n_X:
             self.set_xi(n_X, n_process, tqdm, level_tqdm)
                 
         lamdas = np.array(lamdas)

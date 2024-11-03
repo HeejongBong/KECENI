@@ -26,8 +26,8 @@ class KernelEstimate:
         ) / np.sum(self.ws, 0)
     
     def bb_bst(self, hops=1, n_bst=100, tqdm=None, level_tqdm=0):
-        if self.G0.dist is None:
-            self.G0.get_dist()
+        if self.fit.data.G.dist is None:
+            self.fit.data.G.get_dist()
             
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
@@ -73,23 +73,25 @@ class KernelEstimate:
         ) / np.sum(self.ws, 0)
 
         hops = np.array(hops)
-        Ks = self.G0.n_node / np.mean(np.sum(self.G0.dist <= hops[...,None,None], -1),-1)
-        Ks_all = self.G0.n_node / np.mean(np.sum(
-            self.G0.dist <= np.arange(np.max(hops).astype(int)+1)[1:,None,None], -1
+        Ks = self.fit.data.G.n_node / np.mean(np.sum(
+            self.fit.data.G.dist <= hops[...,None,None], -1
+        ),-1)
+        Ks_all = self.fit.data.G.n_node / np.mean(np.sum(
+            self.fit.data.G.dist <= np.arange(np.max(hops).astype(int)+1)[1:,None,None], -1
         ), -1)
 
         phis_bst = np.zeros((n_bst,)+hops.shape+phis.shape[2:])
         for i_bst in tqdm(range(n_bst), smoothing=0, 
                       desc='bst', leave=None, position=level_tqdm):
-            id_smp = np.random.choice(self.G0.n_node, np.max(Ks.astype(int)), replace=True)
+            id_smp = np.random.choice(self.fit.data.G.n_node, np.max(Ks.astype(int)), replace=True)
             bs_bst = np.logical_and(
-                self.G0.dist[id_smp] <= hops[...,None,None], 
+                self.fit.data.G.dist[id_smp] <= hops[...,None,None], 
                 np.sum(
                     Ks_all[:,None].astype(int) > np.arange(np.max(Ks).astype(int)), 0
                 )[:,None] >= hops[...,None,None]
             )
             phis_bst[i_bst] = np.sum(
-                np.sum(bs_bst, -2).reshape(hops.shape+(self.G0.n_node,)+(1,)*(phis.ndim-2))
+                np.sum(bs_bst, -2).reshape(hops.shape+(self.fit.data.G.n_node,)+(1,)*(phis.ndim-2))
                 * phis[:,i_bst], hops.ndim
             ) * (Ks / Ks.astype(int)).reshape(hops.shape+(1,)*(phis.ndim-2))
 
