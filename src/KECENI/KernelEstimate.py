@@ -3,34 +3,28 @@ import numpy.random as random
 import pandas as pd
 
 class KernelEstimate:
-    def __init__(self, fit, i0, T0, G0, lamdas, hs, Ds, xis, offsets=None):
+    def __init__(self, fit, i0s, T0s, G0, lamdas, Ds):
         self.fit = fit
         
-        self.i0 = i0
-        self.T0 = T0
+        self.i0s = i0s
+        self.T0s = T0s
         self.G0 = G0
-
-        self.lamdas = np.array(lamdas)
-        self.hs = np.array(hs)
         
+        self.lamdas = np.array(lamdas)
         self.Ds = Ds
-        self.xis = xis
-
-        self.offsets = offsets
-
         self.ws = np.exp(
-            - self.lamdas.reshape(self.lamdas.shape+(1,)*(self.Ds.ndim-1))
-            * self.Ds.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.Ds.shape[1:])
+            - lamdas.reshape(lamdas.shape+(1,)*(Ds.ndim-1))
+            * Ds.reshape((self.fit.data.n_node,)+(1,)*lamdas.ndim+Ds.shape[1:])
         )
 
     def est(self):
         return np.sum(
-            np.mean(self.xis, -1).reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:-1])
+            self.fit.xis.reshape((self.fit.data.n_node,)+(1,)*(self.lamdas.ndim+self.Ds.ndim-1))
             * self.ws, 0
         ) / np.sum(self.ws, 0)
 
     def phis_dr(self):
         return (
-            (self.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
+            (self.fit.xis.reshape((self.fit.data.n_node,)+(1,)*self.lamdas.ndim+self.xis.shape[1:])
              - self.est()[...,None]) * self.ws[...,None]
         ) / np.sum(self.ws, 0)[...,None] + self.offsets

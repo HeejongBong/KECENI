@@ -80,6 +80,7 @@ class LinearRegressionFit(RegressionFit):
         Z = self.summary(T_N1, X_N2, G_N2)
         Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
+        
         return self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
 
     def predict_with_residual(self, T_N1, X_N2, G_N2):
