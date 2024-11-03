@@ -60,7 +60,7 @@ def bb_bst(phis, G, hops=1, n_bst=1000, tqdm=None, level_tqdm=0):
         )
         phis_bst[i_bst] = np.sum(
             np.sum(bs_bst, -2).reshape(hops.shape+(G.n_node,)+(1,)*(phis.ndim-2))
-            * np.mean(phis[...,id_bst], -1), hops.ndim
+            * np.mean(phis[:,id_bst], -1), hops.ndim
         ) * (Ks / Ks.astype(int)).reshape(hops.shape+(1,)*(phis.ndim-2))
 
     return phis_bst

@@ -142,11 +142,19 @@ class Fit:
         self.vps = np.array(vps)
         
         self.xis = (self.data.Ys - self.mus) * self.vps / self.pis + self.ms
+        self.n_X = n_X
         
         return
 
     def kernel_AIPW(self, i0s, T0s=None, G0=None, 
                     lamdas=0, n_X=100, n_process=1, tqdm=None, level_tqdm=0):
+        if G0 is None:
+            G0 = self.data.G
+            if T0s is None:
+                T0s = self.data.Ts
+        elif T0s is None:
+            raise
+            
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
