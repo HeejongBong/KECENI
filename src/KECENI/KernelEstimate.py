@@ -115,7 +115,7 @@ class KernelEstimate:
         
         return ms_bst, vps_bst
         
-    def phis_eif(self, lamdas, n_bst=100, cov_fits=None, n_process=1, tqdm=None, level_tqdm=0):
+    def phis_eif(self, lamdas, n_bst=100, cov_bst=None, n_process=1, tqdm=None, level_tqdm=0):
         lamdas = np.array(lamdas)
         ws = self.ws(lamdas)
             
@@ -123,8 +123,8 @@ class KernelEstimate:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
     
-        if cov_fits is None:
-            cov_fits = self.fit.cov_bst(n_bst=n_bst)
+        if cov_bst is None:
+            cov_bst = self.fit.cov_bst(n_bst=n_bst)
             
         # def nuisance_bst_j(self, j, Xs_bst):
         
@@ -133,7 +133,7 @@ class KernelEstimate:
             r = list(tqdm(starmap(self.nuisance_bst_j, map(
                 lambda j: (j, np.array([
                     cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
-                    for cov_fit in cov_fits
+                    for cov_fit in cov_bst
                 ])), self.js
             )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
         
@@ -143,7 +143,7 @@ class KernelEstimate:
                 r = list(tqdm(p.istarmap(self.nuisance_bst_j, map(
                     lambda j: (j, np.array([
                         cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
-                        for cov_fit in cov_fits
+                        for cov_fit in cov_bst
                     ])), self.js
                 )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
                 
@@ -203,7 +203,7 @@ class KernelEstimate:
         return ms_bst, vps_bst, res_bst
         
     
-    def phis_dr(self, lamdas, n_bst=100, cov_fits=None, tqdm=None, level_tqdm=0):
+    def phis_eif_with_offsets(self, lamdas, n_bst=100, cov_bst=None, tqdm=None, level_tqdm=0):
         lamdas = np.array(lamdas)
         ws = self.ws(lamdas)
             
@@ -211,8 +211,8 @@ class KernelEstimate:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
             
-        if cov_fits is None:
-            cov_fits = self.fit.cov_bst(n_bst=n_bst)
+        if cov_bst is None:
+            cov_bst = self.fit.cov_bst(n_bst=n_bst)
 
         # def nuisance_with_residual_j(self, j, Xs_bst):
         
@@ -223,7 +223,7 @@ class KernelEstimate:
             ms_j, vps_j, res_j = self.nuisance_with_residual_j(
                 k, j, np.array([
                     cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
-                    for cov_fit in cov_fits
+                    for cov_fit in cov_bst
                 ])
             )
             
@@ -245,6 +245,13 @@ class KernelEstimate:
         ) / np.sum(ws, 0)
         
         return phis, np.moveaxis(offsets, 1, 0)
+    
+    def phis_dr(self, lamdas, n_bst=100, cov_bst=None, tqdm=None, level_tqdm=0):
+        phis, offsets = self.phis_eif_with_offsets(
+            lamdas, n_bst, cov_bst, tqdm, level_tqdm
+        )
+        
+        return phis + offsets
     
 class CrossValidationEstimate(KernelEstimate):
     def xs_xhs(self, lamdas):
@@ -275,8 +282,15 @@ def concat_CVs(list_CV):
         np.concatenate([CV_i.vps for CV_i in list_CV]),
     )
 
-def concat_phis(list_phis, list_ws):
-    return np.concatenate([
-        phis_i * ws_i / np.sum(list_ws, 0)
-        for phis_i, ws_i in zip(list_phis, list_ws)
-    ])
+def concat_phis(list_ws, list_phis, list_offests=None):
+    if list_offsets is None:
+        return np.concatenate([
+            phis_i * ws_i / np.sum(list_ws, 0)
+            for phis_i, ws_i in zip(list_phis, list_ws)
+        ])
+    else:
+        phis_eif = concat_phis(list_ws, list_phis)
+        return (
+            phis_eif + np.sum(np.moveaxis(list_offsets, 0, -3) * np.array(list_ws), -3)
+            / np.sum(list_ws, 0)
+        )
