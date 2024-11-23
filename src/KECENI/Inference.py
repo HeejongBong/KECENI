@@ -48,9 +48,8 @@ def bb_bst(phis, G, hops=1, n_bst=1000, tqdm=None, level_tqdm=0):
         G.dist <= np.arange(np.max(hops).astype(int)+1)[1:,None,None], -1
     ), -1)
 
-    phis_bst = np.zeros((n_bst,)+hops.shape+phis.shape[1:-1])
+    phis_bst = np.zeros((n_bst,)+hops.shape+phis.shape[1:])
     for i_bst in tqdm(range(n_bst), smoothing=0, desc='bst', leave=None, position=level_tqdm):
-        id_bst = np.random.choice(phis.shape[-1], phis.shape[-1], replace=True)
         id_smp = np.random.choice(G.n_node, np.max(Ks.astype(int)), replace=True)
         bs_bst = np.logical_and(
             G.dist[id_smp] <= hops[...,None,None], 
@@ -59,9 +58,9 @@ def bb_bst(phis, G, hops=1, n_bst=1000, tqdm=None, level_tqdm=0):
             )[:,None] >= hops[...,None,None]
         )
         phis_bst[i_bst] = np.sum(
-            np.sum(bs_bst, -2).reshape(hops.shape+(G.n_node,)+(1,)*(phis.ndim-2))
-            * np.mean(phis[:,id_bst], -1), hops.ndim
-        ) * (Ks / Ks.astype(int)).reshape(hops.shape+(1,)*(phis.ndim-2))
+            np.sum(bs_bst, -2).reshape(hops.shape+(G.n_node,)+(1,)*(phis.ndim-1))
+            * phis, hops.ndim
+        ) * (Ks / Ks.astype(int)).reshape(hops.shape+(1,)*(phis.ndim-1))
 
     return phis_bst
 
