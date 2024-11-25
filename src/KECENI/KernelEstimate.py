@@ -125,6 +125,8 @@ class KernelEstimate:
     
         if cov_bst is None:
             cov_bst = self.fit.cov_bst(n_bst=n_bst)
+        else:
+            n_bst = len(cov_bst)
             
         # def nuisance_bst_j(self, j, Xs_bst):
         
@@ -213,6 +215,8 @@ class KernelEstimate:
             
         if cov_bst is None:
             cov_bst = self.fit.cov_bst(n_bst=n_bst)
+        else:
+            n_bst = len(cov_bst)
 
         # def nuisance_with_residual_j(self, j, Xs_bst):
         
@@ -282,7 +286,7 @@ def concat_CVs(list_CV):
         np.concatenate([CV_i.vps for CV_i in list_CV]),
     )
 
-def concat_phis(list_ws, list_phis, list_offests=None):
+def concat_phis(list_ws, list_phis, list_offsets=None):
     if list_offsets is None:
         return np.concatenate([
             phis_i * ws_i / np.sum(list_ws, 0)
