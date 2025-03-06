@@ -22,9 +22,16 @@ class PropensityFit:
 
     def predict(self, T_N1, X_N2, G_N2):
         pass
+    
+    def H(self, T_N1, X_N2, G_N2):
+        pass
+    
+    def predict_with_H(self, T_N1, X_N2, G_N2):
+        pass
 
     def sample(self, n_sample, X_N2, G_N2):
         pass
+    
 
 
 
@@ -45,7 +52,10 @@ class FittedPropensityFit(PropensityFit):
     def predict(self, T_N1, X_N2, G_N2):
         return self.pi(T_N1, X_N2, G_N2)
     
-    def predict_with_residual(self, T_N1, X_N2, G_N2):
+    def H(self, T_N1, X_N2, G_N2):
+        return np.zeros(np.braodcast_shapes(T_N1.shape[:-1],X_N2.shape[:-2])+(1,))
+    
+    def predict_with_H(self, T_N1, X_N2, G_N2):
         pi = self.pi(T_N1, X_N2, G_N2)
         return pi, np.zeros(pi.shape+(1,))
 
@@ -62,21 +72,13 @@ class IIDPropensityModel(PropensityModel):
         
 class IIDPropensityFit(PropensityFit):
     def predict_i(self, T, X_N1, G_N1):
-        T = np.array(T)
-        pi_i = np.full(
-            np.broadcast_shapes(T.shape, X_N1.shape[:-2]),
-            0.5
-        )
-        return pi_i
+        pass
+    
+    def H_i(self, T, X_N1, G_N1):
+        pass
 
-    def predict_with_residual_i(self, T, X_N1, G_N1):
-        T = np.array(T)
-        pi_i = np.full(
-            np.broadcast_shapes(T.shape, X_N1.shape[:-2]),
-            0.5
-        )
-        res_i = np.zeros(pi_i.shape+(1,))
-        return pi_i, res_i
+    def predict_with_H_i(self, T, X_N1, G_N1):
+        pass
 
     def predict(self, T_N1, X_N2, G_N2, *args, **kwargs):
         n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
@@ -84,20 +86,33 @@ class IIDPropensityFit(PropensityFit):
             T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
             *args, **kwargs
         ) for j in G_N2.N1(0)], 0)
-
-    def predict_with_residual(self, T_N1, X_N2, G_N2, *args, **kwargs):
+    
+    def H(self, T_N1, X_N2, G_N2, *args, **kwargs):
         n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
 
-        pi_is, res_is = list(zip(*[self.predict_with_residual_i(
+        pi_is, H_is = list(zip(*[self.predict_with_H_i(
             T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
             *args, **kwargs
         ) for j in G_N2.N1(0)]))
-        pi_is = np.array(pi_is); res_is = np.array(res_is)
+        pi_is = np.array(pi_is); H_is = np.array(H_is)
 
         pi = np.prod(pi_is, 0)
-        res = np.sum((pi / pi_is)[...,None] * res_is, 0)
         
-        return pi, res
+        return np.sum((pi / pi_is)[...,None] * H_is, 0)
+        
+    def predict_with_H(self, T_N1, X_N2, G_N2, *args, **kwargs):
+        n1 = len(G_N2.N1(0)); n2 = len(G_N2.N2(0))
+
+        pi_is, H_is = list(zip(*[self.predict_with_H_i(
+            T_N1[...,j], X_N2[...,G_N2.N1(j),:], G_N2.sub(G_N2.N1(j)),
+            *args, **kwargs
+        ) for j in G_N2.N1(0)]))
+        pi_is = np.array(pi_is); H_is = np.array(H_is)
+
+        pi = np.prod(pi_is, 0)
+        H = np.sum((pi / pi_is)[...,None] * H_is, 0)
+        
+        return pi, H
 
     def sample_i(self, n_sample, X_N1, G_N1, *args, **kwargs):
         ps = self.predict_i(1, X_N1, G_N1, *args, **kwargs)
@@ -189,8 +204,8 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
             self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1])
             - T
         )
-
-    def predict_with_residual_i(self, T, X_N1, G_N1):
+    
+    def H_i(self, T, X_N1, G_N1):
         Z = self.summary(X_N1, G_N1)
         Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
@@ -200,14 +215,32 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
             - T
         )
         var_i = (1 - pi_i) * pi_i
-        res_i = - (
+        
+        return - (
             (((2*T - 1) * var_i)[...,None] * Z) 
             @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
                       @ self.model_fit.Zs_)
             @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
         )
         
-        return pi_i, res_i
+    def predict_with_H_i(self, T, X_N1, G_N1):
+        Z = self.summary(X_N1, G_N1)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
+        dZ = Z.shape[-1]
+
+        pi_i = np.abs(
+            self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,0].reshape(Z.shape[:-1])
+            - T
+        )
+        var_i = (1 - pi_i) * pi_i
+        H_i = - (
+            (((2*T - 1) * var_i)[...,None] * Z) 
+            @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
+                      @ self.model_fit.Zs_)
+            @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
+        )
+        
+        return pi_i, H_i
 
 
 
@@ -309,8 +342,8 @@ class KernelIIDPropensityFit(IIDPropensityFit):
             np.sum(self.data.Ts * ws, -1) / np.sum(ws, -1)
             - 1 + T
         )
-
-    def predict_with_residual_i(self, T, X_N1, G_N1, lamdas=None):
+    
+    def H_i(self, T, X_N1, G_N1, lamdas=None):
         if lamdas is None:
             lamdas = np.array(self.lamda)
         else:
@@ -329,9 +362,33 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
         pi_i = np.sum((np.array(T)[...,None] == self.data.Ts) * ws, -1) / np.sum(ws, -1)
-        res_i = - (
+        return - (
             ((np.array(T)[...,None] == self.data.Ts) - pi_i[...,None]) * ws 
             / np.sum(ws, -1)[...,None]
         )
         
-        return pi_i, res_i
+    def predict_with_H_i(self, T, X_N1, G_N1, lamdas=None):
+        if lamdas is None:
+            lamdas = np.array(self.lamda)
+        else:
+            lamdas = np.array(lamdas)
+            
+        Ds = np.stack(
+            [self.delta(X_N1, G_N1, 
+                        self.data.Xs[self.data.G.N1(i)],
+                        self.data.G.sub(self.data.G.N1(i)))
+             for i in np.arange(self.data.n_node)], -1
+        )
+        Ds = Ds - np.min(Ds, -1)[...,None]
+
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
+
+        pi_i = np.sum((np.array(T)[...,None] == self.data.Ts) * ws, -1) / np.sum(ws, -1)
+        H_i = - (
+            ((np.array(T)[...,None] == self.data.Ts) - pi_i[...,None]) * ws 
+            / np.sum(ws, -1)[...,None]
+        )
+        
+        return pi_i, H_i

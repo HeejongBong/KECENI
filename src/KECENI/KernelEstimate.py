@@ -77,7 +77,7 @@ class KernelEstimate:
                 lambda j: (j, i0s), self.js
             )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
         
-        elif n_process > 1:
+        elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.D_cv_j, map(
@@ -100,7 +100,19 @@ class KernelEstimate:
             * ws, 0
         ) / np.sum(ws, 0)
     
-    def nuisance_bst_j(self, j, Xs_bst):
+    def phis_eif(self, lamdas):
+        lamdas = np.array(lamdas)
+        ws = self.ws(lamdas)
+        
+        phis = (
+            (self.xis.reshape(self.xis.shape+(1,)*(ws.ndim-1))
+             - self.est(lamdas)) * ws
+        ) / np.sum(ws, 0)
+        
+        return phis
+        
+    
+    def nus_bst_j(self, j, Xs_bst):
         ms_bst = np.mean(
             self.fit.mu(self.fit.data.Ts[self.fit.data.G.N1(j)], Xs_bst, 
                         self.fit.data.G.sub(self.fit.data.G.N2(j))),
@@ -115,7 +127,7 @@ class KernelEstimate:
         
         return ms_bst, vps_bst
         
-    def phis_eif(self, lamdas, n_bst=100, cov_bst=None, n_process=1, tqdm=None, level_tqdm=0):
+    def phis_bst(self, lamdas, n_bst=100, cov_bst=None, n_process=1, tqdm=None, level_tqdm=0):
         lamdas = np.array(lamdas)
         ws = self.ws(lamdas)
             
@@ -132,17 +144,17 @@ class KernelEstimate:
         
         if n_process == 1:
             from itertools import starmap
-            r = list(tqdm(starmap(self.nuisance_bst_j, map(
+            r = list(tqdm(starmap(self.nus_bst_j, map(
                 lambda j: (j, np.array([
                     cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
                     for cov_fit in cov_bst
                 ])), self.js
             )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
         
-        elif n_process > 1:
+        elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
-                r = list(tqdm(p.istarmap(self.nuisance_bst_j, map(
+                r = list(tqdm(p.istarmap(self.nus_bst_j, map(
                     lambda j: (j, np.array([
                         cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
                         for cov_fit in cov_bst
@@ -163,49 +175,150 @@ class KernelEstimate:
         ) / np.sum(ws, 0)
 
         return phis
-
-    def nuisance_with_residual_j(self, k, j, Xs_bst):
-        _, res_mu = self.fit.mu_fit.predict_with_residual(
-            self.fit.data.Ts[self.fit.data.G.N1(j)], 
-            self.fit.data.Xs[self.fit.data.G.N2(j)],
-            self.fit.data.G.sub(self.fit.data.G.N2(j))
-        )
-        
-        mus_bst, res_mus = self.fit.mu_fit.predict_with_residual(
-            self.fit.data.Ts[self.fit.data.G.N1(j)], Xs_bst, 
-            self.fit.data.G.sub(self.fit.data.G.N2(j))
-        )
-        
-        ms_bst = np.mean(mus_bst, 1)
-        res_ms = np.mean(res_mus, 1)
-        
-        _, res_pi = self.fit.pi_fit.predict_with_residual(
-            self.fit.data.Ts[self.fit.data.G.N1(j)], 
-            self.fit.data.Xs[self.fit.data.G.N2(j)],
-            self.fit.data.G.sub(self.fit.data.G.N2(j))
-        )
-        
-        pis_bst, res_pis = self.fit.pi_fit.predict_with_residual(
-            self.fit.data.Ts[self.fit.data.G.N1(j)], Xs_bst, 
-            self.fit.data.G.sub(self.fit.data.G.N2(j))
-        )
-        
-        vps_bst = np.mean(pis_bst, 1)
-        res_vps = np.mean(res_pis, 1)
-        
-        res_bst = (
-            - vps_bst[:,None] / (self.pis[k]**2) * (self.fit.data.Ys[j] - self.mus[k]) 
-            * res_pi
-            + 1 / self.pis[k] * (self.fit.data.Ys[j] - self.mus[k]) 
-            * res_vps
-            - vps_bst[:,None] / self.pis[k] * res_mu
-            + res_ms
-        )
-        
-        return ms_bst, vps_bst, res_bst
-        
     
-    def phis_eif_with_offsets(self, lamdas, n_bst=100, cov_bst=None, tqdm=None, level_tqdm=0):
+    def H_nu_j(self, k, j, n_X):
+        Xs_bst = self.fit.rX(n_X, self.fit.data.G.N2(j), self.fit.data.G)
+        
+        H_mu = self.fit.mu_fit.H(
+            self.fit.data.Ts[self.fit.data.G.N1(j)], 
+            self.fit.data.Xs[self.fit.data.G.N2(j)],
+            self.fit.data.G.sub(self.fit.data.G.N2(j))
+        )
+        
+        H_mus_bst = self.fit.mu_fit.H(
+            self.fit.data.Ts[self.fit.data.G.N1(j)], Xs_bst, 
+            self.fit.data.G.sub(self.fit.data.G.N2(j))
+        )
+        
+        H_m = np.mean(H_mus_bst, -2)
+        
+        H_pi = self.fit.pi_fit.H(
+            self.fit.data.Ts[self.fit.data.G.N1(j)], 
+            self.fit.data.Xs[self.fit.data.G.N2(j)],
+            self.fit.data.G.sub(self.fit.data.G.N2(j))
+        )
+        
+        H_pis_bst = self.fit.pi_fit.H(
+            self.fit.data.Ts[self.fit.data.G.N1(j)], Xs_bst, 
+            self.fit.data.G.sub(self.fit.data.G.N2(j))
+        )
+        
+        H_vp = np.mean(H_pis_bst, -2)
+        
+        H_nu = (
+            - self.vps[k] / (self.pis[k]**2) * (self.fit.data.Ys[j] - self.mus[k]) 
+            * H_pi
+            + 1 / self.pis[k] * (self.fit.data.Ys[j] - self.mus[k]) 
+            * H_vp
+            - self.vps[k] / self.pis[k] * H_mu
+            + H_m
+        )
+        
+        return H_nu
+
+#     def nus_with_H_j(self, k, j, Xs_bst):
+#         _, H_mu = self.fit.mu_fit.predict_with_H(
+#             self.fit.data.Ts[self.fit.data.G.N1(j)], 
+#             self.fit.data.Xs[self.fit.data.G.N2(j)],
+#             self.fit.data.G.sub(self.fit.data.G.N2(j))
+#         )
+        
+#         mus_bst, H_mus = self.fit.mu_fit.predict_with_H(
+#             self.fit.data.Ts[self.fit.data.G.N1(j)], Xs_bst, 
+#             self.fit.data.G.sub(self.fit.data.G.N2(j))
+#         )
+        
+#         ms_bst = np.mean(mus_bst, 1)
+#         H_ms = np.mean(H_mus, 1)
+        
+#         _, H_pi = self.fit.pi_fit.predict_with_H(
+#             self.fit.data.Ts[self.fit.data.G.N1(j)], 
+#             self.fit.data.Xs[self.fit.data.G.N2(j)],
+#             self.fit.data.G.sub(self.fit.data.G.N2(j))
+#         )
+        
+#         pis_bst, H_pis = self.fit.pi_fit.predict_with_H(
+#             self.fit.data.Ts[self.fit.data.G.N1(j)], Xs_bst, 
+#             self.fit.data.G.sub(self.fit.data.G.N2(j))
+#         )
+        
+#         vps_bst = np.mean(pis_bst, 1)
+#         H_vps = np.mean(H_pis, 1)
+        
+#         H_bst = (
+#             - vps_bst[:,None] / (self.pis[k]**2) * (self.fit.data.Ys[j] - self.mus[k]) 
+#             * H_pi
+#             + 1 / self.pis[k] * (self.fit.data.Ys[j] - self.mus[k]) 
+#             * H_vps
+#             - vps_bst[:,None] / self.pis[k] * H_mu
+#             + H_ms
+#         )
+        
+#         return ms_bst, vps_bst, H_bst
+            
+    
+#     def phis_bst_with_Hs_nu(self, lamdas, n_bst=100, cov_bst=None, n_process=1, tqdm=None, level_tqdm=0):
+#         lamdas = np.array(lamdas)
+#         ws = self.ws(lamdas)
+            
+#         if tqdm is None:
+#             def tqdm(iterable, *args, **kwargs):
+#                 return iterable
+            
+#         if cov_bst is None:
+#             cov_bst = self.fit.cov_bst(n_bst=n_bst)
+#         else:
+#             n_bst = len(cov_bst)
+            
+#         # def nuisance_bst_j(self, j, Xs_bst):
+        
+#         if n_process == 1:
+#             from itertools import starmap
+#             r = list(tqdm(starmap(self.nus_bst_j, map(
+#                 lambda j: (j, np.array([
+#                     cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
+#                     for cov_fit in cov_bst
+#                 ])), self.js
+#             )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+        
+#         elif n_process is None or n_process > 1:
+#             from multiprocessing import Pool
+#             with Pool(n_process) as p:   
+#                 r = list(tqdm(p.istarmap(self.nus_bst_j, map(
+#                     lambda j: (j, np.array([
+#                         cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
+#                         for cov_fit in cov_bst
+#                     ])), self.js
+#                 )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+                
+#         ms_bst, vps_bst = list(zip(*r))
+
+#         # def nuisance_with_residual_j(self, j, Xs_bst):
+#         wHs_nu = np.zeros((n_bst,self.fit.data.n_node) + ws.shape[1:])
+#         for k, j in tqdm(enumerate(self.js), total=len(self.js), leave=None, 
+#                       position=level_tqdm, desc='j', smoothing=0):
+#             H_nu_j = self.H_nu_j(
+#                 k, j, cov_fits[0].sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
+#             )
+#             wHs_nu += ws[k] * H_nu_j.reshape(H_nu_j.shape + (1,) * (ws.ndim-1))
+        
+#         ms_bst = np.array(ms_bst); vps_bst = np.array(vps_bst)
+#         Hs = wHs / np.sum(ws, 0)
+        
+#         xis_bst = (
+#             (self.fit.data.Ys[self.js,None] - self.mus[:,None])
+#             * vps_bst / self.pis[:,None]
+#             + ms_bst
+#         )
+        
+#         phis = (
+#             (xis_bst.reshape(xis_bst.shape+(1,)*(ws.ndim-1))
+#              - self.est(lamdas)) * ws[:,None]
+#         ) / np.sum(ws, 0)
+        
+#         return phis, Hs[:,None]
+
+    def Hs_nu(self, lamdas, n_X=None, tqdm=None, level_tqdm=0):
         lamdas = np.array(lamdas)
         ws = self.ws(lamdas)
             
@@ -213,49 +326,112 @@ class KernelEstimate:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
             
-        if cov_bst is None:
-            cov_bst = self.fit.cov_bst(n_bst=n_bst)
-        else:
-            n_bst = len(cov_bst)
+        if n_X is None:
+            n_X = self.n_X
 
-        # def nuisance_with_residual_j(self, j, Xs_bst):
-        
-        ms_bst = []; vps_bst = []
-        offsets = np.zeros((n_bst,self.fit.data.n_node) + ws.shape[1:])
+        # def H_nu_j(self, k, j, Xs_bst):
+        wHs_nu = np.zeros((self.fit.data.n_node,) + ws.shape[1:])
         for k, j in tqdm(enumerate(self.js), total=len(self.js), leave=None, 
                       position=level_tqdm, desc='j', smoothing=0):
-            ms_j, vps_j, res_j = self.nuisance_with_residual_j(
-                k, j, np.array([
-                    cov_fit.sample(self.n_X, self.fit.data.G.N2(j), self.fit.data.G)
-                    for cov_fit in cov_bst
-                ])
-            )
-            
-            ms_bst.append(ms_j); vps_bst.append(vps_j)
-            offsets += ws[k] * res_j.reshape(res_j.shape + (1,) * (ws.ndim-1))
+            wHs_nu += ws[j] * self.H_nu_j(
+                k, j, n_X
+            ).reshape((self.fit.data.n_node,) + (1,) * (ws.ndim-1))
         
-        ms_bst = np.array(ms_bst); vps_bst = np.array(vps_bst)
-        offsets = offsets / np.sum(ws, 0)
+        Hs_nu = wHs_nu / np.sum(ws, 0)
         
-        xis_bst = (
-            (self.fit.data.Ys[self.js,None] - self.mus[:,None])
-            * vps_bst / self.pis[:,None]
-            + ms_bst
-        )
-        
-        phis = (
-            (xis_bst.reshape(xis_bst.shape+(1,)*(ws.ndim-1))
-             - self.est(lamdas)) * ws[:,None]
-        ) / np.sum(ws, 0)
-        
-        return phis, np.moveaxis(offsets, 1, 0)
+        return Hs_nu
     
-    def phis_dr(self, lamdas, n_bst=100, cov_bst=None, tqdm=None, level_tqdm=0):
-        phis, offsets = self.phis_eif_with_offsets(
-            lamdas, n_bst, cov_bst, tqdm, level_tqdm
+    def phis_bst_dr(self, lamdas, n_bst=100, cov_bst=None, n_X=None, 
+                    n_process=1, tqdm=None, level_tqdm=0):
+        # def phis_bst(self, lamdas, n_bst=100, cov_bst=None, n_process=1, tqdm=None, level_tqdm=0):
+        phis_bst = self.phis_bst(lamdas, n_bst, cov_bst, n_process, tqdm, level_tqdm)
+        
+        # def Hs_nu(self, lamdas, n_X=None, tqdm=None, level_tqdm=0):
+        Hs_nu = self.Hs_nu(lamdas, n_X, tqdm, level_tqdm)
+        
+        return phis_bst + Hs_nu[:,None]
+    
+    def H_px_j(self, k, j, n_sample):
+        H_px_m = self.fit.cov_fit.H(lambda X_N2: self.fit.mu(
+            self.fit.data.Ts[self.fit.data.G.N1(j)],
+            X_N2, self.fit.data.G.sub(self.fit.data.G.N2(j))
+        ), n_sample, self.fit.data.G.N2(j), self.fit.data.G)
+
+        H_px_vp = self.fit.cov_fit.H(lambda X_N2: self.fit.pi(
+            self.fit.data.Ts[self.fit.data.G.N1(j)],
+            X_N2, self.fit.data.G.sub(self.fit.data.G.N2(j))
+        ), n_sample, self.fit.data.G.N2(j), self.fit.data.G)
+        
+        H_px = (
+            1 / self.pis[k] * (self.fit.data.Ys[j] - self.mus[k]) 
+            * H_px_vp
+            + H_px_m
         )
         
-        return phis + offsets
+        return H_px
+    
+    def H_j(self, k, j, n_X, n_sample):
+        H_nu = self.H_nu_j(k, j, n_X)
+        
+        H_px = self.H_px_j(k, j, n_sample)
+        
+        return H_nu + H_px
+    
+    def Hs_px(self, lamdas, n_sample=None, tqdm=None, level_tqdm=0):
+        lamdas = np.array(lamdas)
+        ws = self.ws(lamdas)
+            
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+            
+        if n_sample is None:
+            n_sample = self.n_X
+
+        # def H_j(self, k, j, Xs_bst, n_sample):
+        wHs = np.zeros((self.fit.data.n_node,) + ws.shape[1:])
+        for k, j in tqdm(enumerate(self.js), total=len(self.js), leave=None, 
+                      position=level_tqdm, desc='j', smoothing=0):
+            wHs += ws[k] * self.H_px_j(
+                k, j, n_sample
+            ).reshape((self.fit.data.n_node,) + (1,) * (ws.ndim-1))
+        
+        Hs = wHs / np.sum(ws, 0)
+        return Hs
+    
+    def Hs(self, lamdas, n_X=None, n_sample=None, tqdm=None, level_tqdm=0):
+        lamdas = np.array(lamdas)
+        ws = self.ws(lamdas)
+            
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+            
+        if n_X is None:
+            n_X = self.n_X
+            
+        if n_sample is None:
+            n_sample = n_X
+
+        # def H_j(self, k, j, Xs_bst, n_sample):
+        wHs = np.zeros((self.fit.data.n_node,) + ws.shape[1:])
+        for k, j in tqdm(enumerate(self.js), total=len(self.js), leave=None, 
+                      position=level_tqdm, desc='j', smoothing=0):
+            wHs += ws[k] * self.H_j(
+                k, j, n_X, n_sample
+            ).reshape((self.fit.data.n_node,) + (1,) * (ws.ndim-1))
+        
+        Hs = wHs / np.sum(ws, 0)
+        return Hs
+    
+    def phis_sdw_dr(self, lamdas, n_X=None, n_sample=None, tqdm=None, level_tqdm=0):
+        # def phis_eif(self, lamdas):
+        phis_eif = self.phis_eif(lamdas)
+        
+        # def Hs(self, lamdas, n_X=None, n_sample=None, tqdm=None, level_tqdm=0):
+        Hs = self.Hs(lamdas, n_X, n_sample, tqdm, level_tqdm)
+        
+        return phis_eif + Hs
     
 class CrossValidationEstimate(KernelEstimate):
     def xs_xhs(self, lamdas):
@@ -286,8 +462,8 @@ def concat_CVs(list_CV):
         np.concatenate([CV_i.vps for CV_i in list_CV]),
     )
 
-def concat_phis(list_ws, list_phis, list_offsets=None):
-    if list_offsets is None:
+def concat_phis(list_ws, list_phis, list_Hs=None):
+    if list_Hs is None:
         return np.concatenate([
             phis_i * ws_i / np.sum(list_ws, 0)
             for phis_i, ws_i in zip(list_phis, list_ws)
@@ -295,6 +471,6 @@ def concat_phis(list_ws, list_phis, list_offsets=None):
     else:
         phis_eif = concat_phis(list_ws, list_phis)
         return (
-            phis_eif + np.sum(np.moveaxis(list_offsets, 0, -3) * np.array(list_ws), -3)
+            phis_eif + np.sum(np.moveaxis(list_Hs, 0, -3) * np.array(list_ws), -3)
             / np.sum(list_ws, 0)
         )

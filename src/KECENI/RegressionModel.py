@@ -20,8 +20,13 @@ class RegressionFit:
     def predict(self, T_N1, X_N2, G_N2):
         pass
     
-    def predict_with_residual(self, T_N1, X_N2, G_N2):
+    def H(self, T_N1, X_N2, G_N2):
         pass
+    
+    def predict_with_H(self, T_N1, X_N2, G_N2):
+        pass
+    
+    
 
 
 
@@ -43,7 +48,10 @@ class FittedRegressionFit(RegressionFit):
         mu = self.mu(T_N1, X_N2, G_N2) 
         return mu
     
-    def predict_with_residual(self, T_N1, X_N2, G_N2):
+    def H(self, T_N1, X_N2, G_N2):
+        return np.zeros(np.braodcast_shapes(T_N1.shape[:-1],X_N2.shape[:-2])+(1,))
+    
+    def predict_with_H(self, T_N1, X_N2, G_N2):
         mu = self.mu(T_N1, X_N2, G_N2) 
         return mu, np.zeros(mu.shape+(1,))
         
@@ -82,19 +90,29 @@ class LinearRegressionFit(RegressionFit):
         dZ = Z.shape[-1]
         
         return self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
+    
+    def H(self, T_N1, X_N2, G_N2):
+        Z = self.summary(T_N1, X_N2, G_N2)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
+        dZ = Z.shape[-1]
 
-    def predict_with_residual(self, T_N1, X_N2, G_N2):
+        return - (
+            Z @ la.inv(self.model_fit.Zs_.T @ self.model_fit.Zs_)
+            @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
+        )
+
+    def predict_with_H(self, T_N1, X_N2, G_N2):
         Z = self.summary(T_N1, X_N2, G_N2)
         Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
 
         mu = self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
-        res = - (
+        H = - (
             Z @ la.inv(self.model_fit.Zs_.T @ self.model_fit.Zs_)
             @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
         )
 
-        return mu, res
+        return mu, H
 
 
 
@@ -132,22 +150,36 @@ class LogisticRegressionFit(RegressionFit):
         Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
         return self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
-
-    def predict_with_residual(self, T_N1, X_N2, G_N2):
+    
+    def H(self, T_N1, X_N2, G_N2):
         Z = self.summary(T_N1, X_N2, G_N2)
         Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
 
         mu = self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
         var = (1 - mu) * mu
-        res = - (
+        return - (
             (var[...,None] * Z) 
             @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
                       @ self.model_fit.Zs_)
             @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
         )
         
-        return mu, res
+    def predict_with_H(self, T_N1, X_N2, G_N2):
+        Z = self.summary(T_N1, X_N2, G_N2)
+        Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
+        dZ = Z.shape[-1]
+
+        mu = self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
+        var = (1 - mu) * mu
+        H = - (
+            (var[...,None] * Z) 
+            @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
+                      @ self.model_fit.Zs_)
+            @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
+        )
+        
+        return mu, H
 
 
 
@@ -169,35 +201,6 @@ class KernelRegressionFit(RegressionFit):
         self.data = data
         self.clip = clip
 
-    def loo_cv_old(self, lamdas, n_cv=100, tqdm=None, leave_tqdm=False):
-        if tqdm is None:
-            def tqdm(iterable, *args, **kwargs):
-                return iterable
-                
-        model = KernelRegressionModel(self.delta)
-
-        ks_cv = random.choice(np.arange(self.data.n_node), n_cv)
-        Ys_cv = np.zeros(lamdas.shape + (n_cv,))
-
-        for iter_k in tqdm(range(n_cv), leave=leave_tqdm, desc='k', total=n_cv):
-            k = ks_cv[iter_k]
-            N1k = self.data.G.N1(k)
-            N2k = self.data.G.N2(k)
-            
-            mk = np.delete(np.arange(self.data.n_node), N2k)
-            
-            data_mk = Data(
-                self.data.Ys[mk], self.data.Ts[mk], 
-                self.data.Xs[mk], self.data.G.sub(mk)
-            )
-            fit_mk = model.fit(data_mk)
-        
-            Ys_cv[:,iter_k] = fit_mk.predict(
-                self.data.Ts[N1k], self.data.Xs[N2k], 
-                self.data.G.sub(N2k), lamdas=lamdas
-            )
-
-        return ks_cv, Ys_cv
 
     def loo_cv(self, lamdas, i0s=None, n_process=1, tqdm=None, leave_tqdm=True):
         if tqdm is None:
@@ -282,8 +285,8 @@ class KernelRegressionFit(RegressionFit):
         mus = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
 
         return mus
-
-    def predict_with_residual(self, T_N1, X_N2, G_N2, lamdas=None):
+    
+    def H(self, T_N1, X_N2, G_N2, lamdas=None):
         if lamdas is None:
             lamdas = np.array(self.lamda)
         else:
@@ -303,9 +306,34 @@ class KernelRegressionFit(RegressionFit):
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
         mu = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
-        res = res = - (
+        return - (
             (self.data.Ys - mu[...,None]) * ws 
             / np.sum(ws, -1)[...,None]
         )
 
-        return mu, res
+    def predict_with_H(self, T_N1, X_N2, G_N2, lamdas=None):
+        if lamdas is None:
+            lamdas = np.array(self.lamda)
+        else:
+            lamdas = np.array(lamdas)
+            
+        Ds = np.stack(
+            [self.delta(T_N1, X_N2, G_N2, 
+                        self.data.Ts[self.data.G.N1(i)],
+                        self.data.Xs[self.data.G.N2(i)],
+                        self.data.G.sub(self.data.G.N2(i)))
+             for i in np.arange(self.data.n_node)], -1
+        )
+        Ds = Ds - np.min(Ds, -1)[...,None]
+
+        lamDs = lamdas.reshape(lamdas.shape+(1,)*Ds.ndim) * Ds
+        ws = np.zeros(lamDs.shape)
+        ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
+
+        mu = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
+        H = - (
+            (self.data.Ys - mu[...,None]) * ws 
+            / np.sum(ws, -1)[...,None]
+        )
+
+        return mu, H

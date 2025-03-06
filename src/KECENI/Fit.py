@@ -46,7 +46,7 @@ class Fit:
                 ITb
             )),  total=ITb.b.size, leave=None, position=level_tqdm, desc='i0', smoothing=0))
         
-        elif n_process > 1:
+        elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.mu, map(
@@ -124,7 +124,7 @@ class Fit:
                 lambda j: (j, i0s, T0s, G0, n_X, np.random.randint(12345)), js
             )), total=len(js), leave=None, position=level_tqdm, desc='j', smoothing=0))
         
-        elif n_process > 1:
+        elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.AIPW_j, map(

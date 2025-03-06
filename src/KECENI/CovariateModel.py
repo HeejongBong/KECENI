@@ -15,7 +15,14 @@ class CovariateModel:
 class CovariateFit:
     def __init__(self):
         pass
-
+    
+    def predict(self, f, n_sample, N2, G):
+        Xs_bst = self.sample(n_sample, N2, G)
+        return np.mean(f(Xs_bst), -1)
+    
+    def H(self, f, n_sample, N2, G):
+        pass
+    
     def sample(self, n_sample, N2, G):
         n2 = N2.shape[0]
         return np.zeros((n_sample, n2))
@@ -33,6 +40,10 @@ class FittedCovariateModel:
 class FittedCovariateFit:
     def __init__(self, rX):
         self.rX = rX
+        
+    def H(self, f, n_sample, N2, G):
+        Ehf = self.predict(f, n_sample, N2, G)
+        return np.zeros(Ehf.shape + (1,))
 
     def sample(self, n_sample, N2, G):
         return self.rX(n_sample, N2, G)
@@ -52,6 +63,22 @@ class IIDCovariateFit:
         self.Xs = np.array(Xs)
         self.dX = Xs.shape[-1]
         self.n_node = Xs.shape[0]
+        
+    def H(self, f, n_sample, N2, G):
+        Xs_bst = self.sample(n_sample, N2, G)
+        
+        fs_swap_k = np.stack([ f(
+            np.insert(
+                np.delete(np.repeat(Xs_bst[None,...], self.n_node, 0), k, -2), 
+                k, self.Xs[:,None,:], -2
+            ).reshape((-1, N2.size,self.Xs.shape[-1]))
+        ) for k in np.arange(N2.size)], -1)
+        
+        H = np.sum(np.mean(fs_swap_k.reshape(
+            fs_swap_k.shape[:-2] + (self.n_node, n_sample) + (-1,)
+        ), -2), -1) / self.n_node
+        
+        return H - np.mean(H, -1)[...,None]
 
     def sample(self, n_sample, N2, G):
         n2 = N2.shape[0]
@@ -73,6 +100,9 @@ class CommunityCovariateFit:
         self.Xs = np.array(Xs)
         self.dX = Xs.shape[-1]
         self.comm_dict = pd.Series(G.Zs[:,0]).groupby(G.Zs[:,0]).groups
+        
+    def H(self, f, n_sample, N2, G):
+        pass
 
     def sample(self, n_sample, N2, G):
         n2 = N2.shape[0]
