@@ -7,7 +7,7 @@ class Model:
         self.cov_model = cov_model
         self.delta = delta
         
-    def fit(self, data, **kwargs):
+    def fit(self, data=None, **kwargs):
         return Fit(
             self, data, **kwargs
         )    
