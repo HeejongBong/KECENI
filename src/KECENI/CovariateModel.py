@@ -64,21 +64,45 @@ class IIDCovariateFit:
         self.dX = Xs.shape[-1]
         self.n_node = Xs.shape[0]
         
-    def H(self, f, n_sample, N2, G):
+    def H(self, f, n_sample, N2, G, n_bst=None):
+        if n_bst is None:
+            n_bst = self.n_node
+            
+        is_bst = np.random.choice(self.n_node, n_bst, False)
         Xs_bst = self.sample(n_sample, N2, G)
+        shape_f = f(Xs_bst[0]).shape[:-1]
         
-        fs_swap_k = np.stack([ f(
-            np.insert(
-                np.delete(np.repeat(Xs_bst[None,...], self.n_node, 0), k, -2), 
-                k, self.Xs[:,None,:], -2
-            ).reshape((-1, N2.size,self.Xs.shape[-1]))
-        ) for k in np.arange(N2.size)], -1)
+#         H_tmp = np.stack([
+#             sum((
+#                 np.mean(f(
+#                     np.insert(
+#                         np.delete(Xs_bst, k, -2), 
+#                         k, self.Xs[j,None,:], -2
+#                     )
+#                 ), -1)
+#                 for k in range(N2.size)
+#             ))
+#             for j in is_bst
+#         ], -1) / np.sqrt(n_bst * self.n_node)
         
-        H = np.sum(np.mean(fs_swap_k.reshape(
-            fs_swap_k.shape[:-2] + (self.n_node, n_sample) + (-1,)
-        ), -2), -1) / self.n_node
+        H_tmp = sum((
+            np.mean(f(
+                np.insert(
+                    np.delete(np.repeat(Xs_bst[None,...], n_bst, 0), k, -2), 
+                    k, self.Xs[is_bst,None,:], -2
+                ).reshape((-1, N2.size, self.Xs.shape[-1]))
+            ).reshape(shape_f + (n_bst, n_sample)), -1)
+            for k in np.arange(N2.size)
+        )) / np.sqrt(n_bst * self.n_node)
         
-        return H - np.mean(H, -1)[...,None]
+#         H = np.sum(np.mean(fs_swap_k.reshape(
+#             fs_swap_k.shape[:-2] + (self.n_node, n_sample) + (-1,)
+#         ), -2), -1) / self.n_node
+        
+        H = np.zeros(H_tmp.shape[:-1] + (self.n_node,))
+        H[...,is_bst] = H_tmp - np.mean(H_tmp, -1)[...,None]
+               
+        return H
 
     def sample(self, n_sample, N2, G):
         n2 = N2.shape[0]

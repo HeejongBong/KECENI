@@ -182,16 +182,16 @@ class KernelEstimate:
         
         return phis_bst + Hs_nu[:,None]
     
-    def H_px_j(self, k, j, n_sample):
+    def H_px_j(self, k, j, n_X, n_bst):
         H_px_m = self.fit.cov_fit.H(lambda X_N2: self.fit.mu(
             self.fit.data.Ts[self.fit.data.G.N1(j)],
             X_N2, self.fit.data.G.sub(self.fit.data.G.N2(j))
-        ), n_sample, self.fit.data.G.N2(j), self.fit.data.G)
+        ), n_X, self.fit.data.G.N2(j), self.fit.data.G, n_bst)
 
         H_px_vp = self.fit.cov_fit.H(lambda X_N2: self.fit.pi(
             self.fit.data.Ts[self.fit.data.G.N1(j)],
             X_N2, self.fit.data.G.sub(self.fit.data.G.N2(j))
-        ), n_sample, self.fit.data.G.N2(j), self.fit.data.G)
+        ), n_X, self.fit.data.G.N2(j), self.fit.data.G, n_bst)
         
         H_px = (
             1 / self.fit.pis[k] * (self.fit.data.Ys[j] - self.fit.mus[k]) 
@@ -201,14 +201,14 @@ class KernelEstimate:
         
         return H_px
     
-    def H_j(self, k, j, n_X, n_sample):
+    def H_j(self, k, j, n_X, n_bst):
         H_nu = self.H_nu_j(k, j, n_X)
         
-        H_px = self.H_px_j(k, j, n_sample)
+        H_px = self.H_px_j(k, j, n_X, n_bst)
         
         return H_nu + H_px
     
-    def Hs_px(self, lamdas, n_sample=None, tqdm=None, level_tqdm=0):
+    def Hs_px(self, lamdas, n_X=None, n_bst=None, tqdm=None, level_tqdm=0):
         lamdas = np.array(lamdas)
         ws = self.ws(lamdas)
             
@@ -216,15 +216,18 @@ class KernelEstimate:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
             
-        if n_sample is None:
-            n_sample = self.fit.n_X
+        if n_X is None:
+            n_X = self.fit.n_X
+            
+        if n_bst is None:
+            n_bst = self.fit.data.n_node
 
         # def H_j(self, k, j, Xs_bst, n_sample):
         wHs = np.zeros((self.fit.data.n_node,) + ws.shape[1:])
         for k, j in tqdm(enumerate(self.fit.js), total=len(self.fit.js), leave=None, 
                       position=level_tqdm, desc='j', smoothing=0):
             wHs += ws[k] * self.H_px_j(
-                k, j, n_sample
+                k, j, n_X, n_bst
             ).reshape((self.fit.data.n_node,) + (1,) * (ws.ndim-1))
         
         Hs = wHs / np.sum(ws, 0)
