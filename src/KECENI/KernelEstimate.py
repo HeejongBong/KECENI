@@ -233,7 +233,7 @@ class KernelEstimate:
         Hs = wHs / np.sum(ws, 0)
         return Hs
     
-    def Hs(self, lamdas, n_X=None, n_sample=None, tqdm=None, level_tqdm=0):
+    def Hs(self, lamdas, n_X=None, n_bst=None, tqdm=None, level_tqdm=0):
         lamdas = np.array(lamdas)
         ws = self.ws(lamdas)
             
@@ -244,26 +244,26 @@ class KernelEstimate:
         if n_X is None:
             n_X = self.fit.n_X
             
-        if n_sample is None:
-            n_sample = n_X
+        if n_bst is None:
+            n_bst = self.fit.data.n_node
 
-        # def H_j(self, k, j, Xs_bst, n_sample):
+        # def H_j(self, k, j, n_X, n_bst):
         wHs = np.zeros((self.fit.data.n_node,) + ws.shape[1:])
         for k, j in tqdm(enumerate(self.fit.js), total=len(self.fit.js), leave=None, 
                       position=level_tqdm, desc='j', smoothing=0):
             wHs += ws[k] * self.H_j(
-                k, j, n_X, n_sample
+                k, j, n_X, n_bst
             ).reshape((self.fit.data.n_node,) + (1,) * (ws.ndim-1))
         
         Hs = wHs / np.sum(ws, 0)
         return Hs
     
-    def phis_sdw_dr(self, lamdas, n_X=None, n_sample=None, tqdm=None, level_tqdm=0):
+    def phis_sdw_dr(self, lamdas, n_X=None, n_bst=None, tqdm=None, level_tqdm=0):
         # def phis_eif(self, lamdas):
         phis_eif = self.phis_eif(lamdas)
         
-        # def Hs(self, lamdas, n_X=None, n_sample=None, tqdm=None, level_tqdm=0):
-        Hs = self.Hs(lamdas, n_X, n_sample, tqdm, level_tqdm)
+        # def Hs(self, lamdas, n_X=None, n_bst=None, tqdm=None, level_tqdm=0):
+        Hs = self.Hs(lamdas, n_X, n_bst, tqdm, level_tqdm)
         
         return phis_eif + Hs
     
