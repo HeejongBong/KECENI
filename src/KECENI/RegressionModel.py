@@ -96,7 +96,7 @@ class LinearRegressionFit(RegressionFit):
         Z = np.concatenate([np.full(Z.shape[:-1]+(1,), 1), Z], -1)
         dZ = Z.shape[-1]
 
-        return - (
+        return (
             Z @ la.inv(self.model_fit.Zs_.T @ self.model_fit.Zs_)
             @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
         )
@@ -107,7 +107,7 @@ class LinearRegressionFit(RegressionFit):
         dZ = Z.shape[-1]
 
         mu = self.model_fit.predict(Z.reshape([-1,dZ])).reshape(Z.shape[:-1])
-        H = - (
+        H = (
             Z @ la.inv(self.model_fit.Zs_.T @ self.model_fit.Zs_)
             @ (self.model_fit.Zs_.T * self.model_fit.residuals_)
         )
@@ -158,7 +158,7 @@ class LogisticRegressionFit(RegressionFit):
 
         mu = self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
         var = (1 - mu) * mu
-        return - (
+        return (
             (var[...,None] * Z) 
             @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
                       @ self.model_fit.Zs_)
@@ -172,7 +172,7 @@ class LogisticRegressionFit(RegressionFit):
 
         mu = self.model_fit.predict_proba(Z.reshape([-1,dZ]))[:,-1].reshape(Z.shape[:-1])
         var = (1 - mu) * mu
-        H = - (
+        H = (
             (var[...,None] * Z) 
             @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
                       @ self.model_fit.Zs_)
@@ -306,7 +306,7 @@ class KernelRegressionFit(RegressionFit):
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
         mu = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
-        return - (
+        return (
             (self.data.Ys - mu[...,None]) * ws 
             / np.sum(ws, -1)[...,None]
         )
@@ -331,7 +331,7 @@ class KernelRegressionFit(RegressionFit):
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
         mu = np.sum(self.data.Ys * ws, -1) / np.sum(ws, -1)
-        H = - (
+        H = (
             (self.data.Ys - mu[...,None]) * ws 
             / np.sum(ws, -1)[...,None]
         )
