@@ -36,14 +36,14 @@ class Fit:
                     from itertools import starmap
                     r = list(tqdm(starmap(self.nu_j, map(
                         lambda j: (j, n_X, np.random.randint(12345)), js
-                    )), total=len(js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+                    )), total=len(js), leave=None, position=level_tqdm, desc='fit', smoothing=0))
 
                 elif n_process is None or n_process > 1:
                     from multiprocessing import Pool
                     with Pool(n_process) as p:   
                         r = list(tqdm(p.istarmap(self.nu_j, map(
                             lambda j: (j, n_X, np.random.randint(12345)), js
-                        )), total=len(js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+                        )), total=len(js), leave=None, position=level_tqdm, desc='fit', smoothing=0))
 
                 self.mus, self.pis, self.ms, self.vps = list(zip(*r))
 
@@ -164,14 +164,14 @@ class Fit:
             from itertools import starmap
             r = list(tqdm(starmap(self.D_j, map(
                 lambda j: (j, i0s, T0s, G0), self.js
-            )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+            )), total=len(self.js), leave=None, position=level_tqdm, desc='AIPW', smoothing=0))
         
         elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.D_j, map(
                     lambda j: (j, i0s, T0s, G0), self.js
-                )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+                )), total=len(self.js), leave=None, position=level_tqdm, desc='AIPW', smoothing=0))
 
         Ds = np.array(r)
         
@@ -213,14 +213,14 @@ class Fit:
             from itertools import starmap
             r = list(tqdm(starmap(self.D_cv_j, map(
                 lambda j: (j, i0s), self.js
-            )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+            )), total=len(self.js), leave=None, position=level_tqdm, desc='cv', smoothing=0))
         
         elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 r = list(tqdm(p.istarmap(self.D_cv_j, map(
                     lambda j: (j, i0s), self.js
-                )), total=len(self.js), leave=None, position=level_tqdm, desc='j', smoothing=0))
+                )), total=len(self.js), leave=None, position=level_tqdm, desc='cv', smoothing=0))
 
         Ds_cv = np.array(r)
         
@@ -235,6 +235,170 @@ class Fit:
             )
             for Xs_i in self.rX(n_bst, np.arange(self.data.n_node), self.data.G)
         ]
+    
+    def nus_bst_j(self, j, Xs_bst):
+        ms_bst = np.mean(
+            self.mu(self.data.Ts[self.data.G.N1(j)], Xs_bst, 
+                        self.data.G.sub(self.data.G.N2(j))),
+            -1
+        )
+        
+        vps_bst = np.mean(
+            self.pi(self.data.Ts[self.data.G.N1(j)], Xs_bst, 
+                        self.data.G.sub(self.data.G.N2(j))),
+            -1
+        )
+        
+        return ms_bst, vps_bst
+    
+    def xis_bst(self, n_bst=100, cov_bst=None, n_process=1, tqdm=None, level_tqdm=0):
+        
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+    
+        if cov_bst is None:
+            cov_bst = self.cov_bst(n_bst=n_bst)
+        else:
+            n_bst = len(cov_bst)
+            
+        # def nus_bst_j(self, j, Xs_bst):
+        
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.nus_bst_j, map(
+                lambda j: (j, np.array([
+                    cov_fit.sample(self.n_X, self.data.G.N2(j), self.data.G)
+                    for cov_fit in cov_bst
+                ])), self.js
+            )), total=len(self.js), leave=None, position=level_tqdm, desc='xis_bst', smoothing=0))
+        
+        elif n_process is None or n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.nus_bst_j, map(
+                    lambda j: (j, np.array([
+                        cov_fit.sample(self.n_X, self.data.G.N2(j), self.data.G)
+                        for cov_fit in cov_bst
+                    ])), self.js
+                )), total=len(self.js), leave=None, position=level_tqdm, desc='xis_bst', smoothing=0))
+                
+        ms_bst, vps_bst = list(zip(*r))
+            
+        xis_bst = (
+            (self.data.Ys[self.js,None] - self.mus[:,None])
+            * vps_bst / self.pis[:,None]
+            + ms_bst
+        )
+        
+        return xis_bst
+    
+    def H_nu_j(self, k, j, n_X):
+        Xs_bst = self.rX(n_X, self.data.G.N2(j), self.data.G)
+        
+        H_mu = self.mu_fit.H(
+            self.data.Ts[self.data.G.N1(j)], 
+            self.data.Xs[self.data.G.N2(j)],
+            self.data.G.sub(self.data.G.N2(j))
+        )
+        
+        H_mus_bst = self.mu_fit.H(
+            self.data.Ts[self.data.G.N1(j)], Xs_bst, 
+            self.data.G.sub(self.data.G.N2(j))
+        )
+        
+        H_m = np.mean(H_mus_bst, -2)
+        
+        H_pi = self.pi_fit.H(
+            self.data.Ts[self.data.G.N1(j)], 
+            self.data.Xs[self.data.G.N2(j)],
+            self.data.G.sub(self.data.G.N2(j))
+        )
+        
+        H_pis_bst = self.pi_fit.H(
+            self.data.Ts[self.data.G.N1(j)], Xs_bst, 
+            self.data.G.sub(self.data.G.N2(j))
+        )
+        
+        H_vp = np.mean(H_pis_bst, -2)
+        
+        H_nu = (
+            - self.vps[k] / (self.pis[k]**2) * (self.data.Ys[j] - self.mus[k]) 
+            * H_pi
+            + 1 / self.pis[k] * (self.data.Ys[j] - self.mus[k]) 
+            * H_vp
+            - self.vps[k] / self.pis[k] * H_mu
+            + H_m
+        )
+        
+        return H_nu
+
+    def Hs_nu(self, n_X=None, n_process=1, tqdm=None, level_tqdm=0):            
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+            
+        if n_X is None:
+            n_X = self.n_X
+
+        # def H_nu_j(self, k, j, n_X):
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.H_nu_j, map(
+                lambda kj: (kj[0], kj[1], n_X), enumerate(self.js)
+            )), total=len(self.js), leave=None, position=level_tqdm, desc='Hs_nu', smoothing=0))
+        
+        elif n_process is None or n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.H_nu_j, map(
+                    lambda kj: (kj[0], kj[1], n_X), enumerate(self.js)
+                )), total=len(self.js), leave=None, position=level_tqdm, desc='Hs_nu', smoothing=0))
+                        
+        return np.array(r)
+    
+    def H_px_j(self, k, j, n_X):
+        H_px_m = self.cov_fit.H(lambda X_N2: self.mu(
+            self.data.Ts[self.data.G.N1(j)],
+            X_N2, self.data.G.sub(self.data.G.N2(j))
+        ), n_X, self.data.G.N2(j), self.data.G)
+
+        H_px_vp = self.cov_fit.H(lambda X_N2: self.pi(
+            self.data.Ts[self.data.G.N1(j)],
+            X_N2, self.data.G.sub(self.data.G.N2(j))
+        ), n_X, self.data.G.N2(j), self.data.G)
+        
+        H_px = (
+            1 / self.pis[k] * (self.data.Ys[j] - self.mus[k]) 
+            * H_px_vp
+            + H_px_m
+        )
+        
+        return H_px
+    
+    def Hs_px(self, n_X=None, n_process=1, tqdm=None, level_tqdm=0):
+        if tqdm is None:
+            def tqdm(iterable, *args, **kwargs):
+                return iterable
+            
+        if n_X is None:
+            n_X = self.n_X
+
+        # def H_px_j(self, k, j, n_X, n_bst):
+        if n_process == 1:
+            from itertools import starmap
+            r = list(tqdm(starmap(self.H_px_j, map(
+                lambda kj: (kj[0], kj[1], n_X), enumerate(self.js)
+            )), total=len(self.js), leave=None, position=level_tqdm, desc='Hs_px', smoothing=0))
+        
+        elif n_process is None or n_process > 1:
+            from multiprocessing import Pool
+            with Pool(n_process) as p:   
+                r = list(tqdm(p.istarmap(self.H_px_j, map(
+                    lambda kj: (kj[0], kj[1], n_X), enumerate(self.js)
+                )), total=len(self.js), leave=None, position=level_tqdm, desc='Hs_px', smoothing=0))
+                        
+        return np.array(r)
 
     def sub(self, ind_js):
         # def __init__(self, model, data=None, n_X=100, js=None, 

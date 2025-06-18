@@ -216,7 +216,7 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
         )
         var_i = (1 - pi_i) * pi_i
         
-        return - (
+        return (
             (((2*T - 1) * var_i)[...,None] * Z) 
             @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
                       @ self.model_fit.Zs_)
@@ -233,7 +233,7 @@ class LogisticIIDPropensityFit(IIDPropensityFit):
             - T
         )
         var_i = (1 - pi_i) * pi_i
-        H_i = - (
+        H_i = (
             (((2*T - 1) * var_i)[...,None] * Z) 
             @ la.pinv((self.model_fit.Zs_.T * self.model_fit.var_)
                       @ self.model_fit.Zs_)
@@ -362,7 +362,7 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
         pi_i = np.sum((np.array(T)[...,None] == self.data.Ts) * ws, -1) / np.sum(ws, -1)
-        return - (
+        return (
             ((np.array(T)[...,None] == self.data.Ts) - pi_i[...,None]) * ws 
             / np.sum(ws, -1)[...,None]
         )
@@ -386,7 +386,7 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         ws[lamDs < self.clip] = np.exp(- lamDs[lamDs < self.clip])
 
         pi_i = np.sum((np.array(T)[...,None] == self.data.Ts) * ws, -1) / np.sum(ws, -1)
-        H_i = - (
+        H_i = (
             ((np.array(T)[...,None] == self.data.Ts) - pi_i[...,None]) * ws 
             / np.sum(ws, -1)[...,None]
         )
