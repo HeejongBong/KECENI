@@ -59,7 +59,7 @@ class KernelEstimate:
 
         return phis
     
-    def wH_nu(self, lamdas, Hs_nu=None, n_X=None, n_process=1, tqdm=None, level_tqdm=0):
+    def wH_nu(self, lamdas, Hs_nu=None, n_X=None, tqdm=None, level_tqdm=0):
         lamdas = np.array(lamdas)
         ws = self.ws(lamdas)
         

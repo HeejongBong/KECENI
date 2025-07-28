@@ -202,7 +202,7 @@ class KernelRegressionFit(RegressionFit):
         self.clip = clip
 
 
-    def loo_cv(self, lamdas, i0s=None, n_process=1, tqdm=None, leave_tqdm=True):
+    def loo_cv(self, lamdas, i0s=None, n_process=None, tqdm=None, leave_tqdm=True):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
@@ -218,7 +218,7 @@ class KernelRegressionFit(RegressionFit):
                 ((k, lamdas, 1, None, False) 
                  for k in i0s)     
             ), total=len(i0s), leave=leave_tqdm, desc='j', smoothing=0))
-        elif n_process > 1:
+        elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 mus_cv = list(tqdm(p.istarmap(self.loo_cv_k,
@@ -228,7 +228,7 @@ class KernelRegressionFit(RegressionFit):
 
         return self.data.Ys[i0s], np.array(mus_cv).T
 
-    def loo_cv_k(self, k, lamdas, n_process=1, tqdm = None, leave_tqdm=False):
+    def loo_cv_k(self, k, lamdas, n_process=None, tqdm = None, leave_tqdm=False):
         N1k = self.data.G.N1(k)
         N2k = self.data.G.N2(k)
         mk = np.delete(np.arange(self.data.n_node), self.data.G.N2(k))

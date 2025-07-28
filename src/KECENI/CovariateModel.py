@@ -52,11 +52,11 @@ class FittedCovariateFit:
 
 ###
 class IIDCovariateModel(CovariateModel):
-    def __init__(self):
-        pass
+    def __init__(self, bal=True):
+        self.bal = bal
         
     def fit(self, data):
-        return IIDCovariateFit(data.Xs)
+        return IIDCovariateFit(data.Xs, self.bal)
 
 class IIDCovariateFit:
     def __init__(self, Xs, bal=True):        
