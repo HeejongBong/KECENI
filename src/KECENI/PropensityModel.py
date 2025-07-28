@@ -262,7 +262,7 @@ class KernelIIDPropensityFit(IIDPropensityFit):
         self.clip = clip
         self.data = data
 
-    def loo_cv(self, lamdas, i0s=None, n_process=1, tqdm=None, leave_tqdm=True):
+    def loo_cv(self, lamdas, i0s=None, n_process=None, tqdm=None, leave_tqdm=True):
         if tqdm is None:
             def tqdm(iterable, *args, **kwargs):
                 return iterable
@@ -278,7 +278,7 @@ class KernelIIDPropensityFit(IIDPropensityFit):
                 ((k, lamdas, 1, None, False) 
                  for k in i0s)
             ), total=len(i0s), leave=leave_tqdm, desc='j', smoothing=0))
-        elif n_process > 1:
+        elif n_process is None or n_process > 1:
             from multiprocessing import Pool
             with Pool(n_process) as p:   
                 pis_cv = list(tqdm(p.istarmap(self.loo_cv_k,

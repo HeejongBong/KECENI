@@ -29,7 +29,7 @@ class Fit:
         self.n_X = n_X
         self.js = js
         
-        if data is not None:
+        if n_X is not None:
             if (mus is None or pis is None or ms is None or vps is None):
                 # def xi_j(self, j, n_X=100, seed=12345):
                 if n_process == 1:
