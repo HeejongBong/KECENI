@@ -164,3 +164,8 @@ cython_debug/
 
 # results files
 *.npz
+*.npy
+
+# slurm err/log files
+*.err
+*.log

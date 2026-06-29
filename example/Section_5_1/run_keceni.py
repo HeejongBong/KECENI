@@ -82,7 +82,7 @@ def run_task(task_id):
     phis_eif = result_AIPW.phis_eif(lamdas)
     wH_nu = result_AIPW.wH_nu(lamdas, n_X=100, tqdm=tqdm)
     wH_px = result_AIPW.wH_px(lamdas, n_X=10, tqdm=tqdm)
-    phis_dr = phis_eif + wH_nu + wH_px
+    phis_dr = phis_eif # + wH_nu + wH_px
     
     ## distance in G
     _ = G.get_dist()

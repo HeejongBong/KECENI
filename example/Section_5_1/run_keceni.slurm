@@ -1,23 +1,32 @@
 #!/bin/bash
 #SBATCH --job-name=run_keceni
-#SBATCH --output=/home/%u/KECENI_anon/example/Section_5_1/logs/%x-%A_%a.log
-#SBATCH --error=/home/%u/KECENI_anon/example/Section_5_1/errs/%x-%A_%a.err
+#SBATCH --chdir=.
+#SBATCH --output=./logs/%x-%A_%a.log
+#SBATCH --error=./errs/%x-%A_%a.err
+#SBATCH --mail-user=bong0@purdue.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --array=0-79
 #SBATCH --time=00:30:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=16G
-#SBATCH --account=elevina0
+#SBATCH --mem=15G
+#SBATCH --partition=cpu
+#SBATCH --account=bong0
 
-# Load necessary modules
-module load python3.10-anaconda/2023.03
+# -----------------------------
+# Load environment and modules
+# -----------------------------
+module load conda
 
 source $(conda info --base)/etc/profile.d/conda.sh
+conda activate causalnet-negishi
 
-# Activate virtual environment if needed
-conda activate causalnet
+# -----------------------------
+# Working directory
+# -----------------------------
+mkdir -p logs errs
 
-# Run the simulation script
-cd ~/KECENI_anon/example/Section_5_1
-
+# -----------------------------
+# Run the R script
+# -----------------------------
 python run_keceni.py $SLURM_ARRAY_TASK_ID
