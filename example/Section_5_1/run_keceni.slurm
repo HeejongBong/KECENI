@@ -5,7 +5,7 @@
 #SBATCH --error=./errs/%x-%A_%a.err
 #SBATCH --mail-user=bong0@purdue.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --array=0-79
+#SBATCH --array=0-199
 #SBATCH --time=00:30:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8

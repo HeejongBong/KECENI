@@ -5,22 +5,22 @@ import scipy.linalg as la
 import scipy.stats as stats
 from scipy.special import expit
 
-from hyperparams import summary_mu, summary_pi
+from hyperparams import HyperAlpha
+
+hyper_true = HyperAlpha(0, 0)
 
 def mu(T_N1, X_N2, G_N2):
     n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
-
-    Z = summary_mu(T_N1, X_N2, G_N2)
+    
+    Z = hyper_true.summary_mu(T_N1, X_N2, G_N2)
     
     return Z @ [2, 2, -1.55, -1.55, -1.55, -1.55, -1.55, -1.55]
     
 def pij(T, X_N1, G_N1):
-    Z = summary_pi(X_N1, G_N1)
+    Z = hyper_true.summary_pi(X_N1, G_N1)
     
     return np.abs(expit(Z @ [0.5, 0.5, 0.5, 0, 0, 0]) - 1 + T)
     
-    # return np.abs(expit(X_N1[...,0,:] @ [0, 0.58, 0.33]) - 1 + T)
-
 def pi(T_N1, X_N2, G_N2):
     n1 = T_N1.shape[-1]; n2 = X_N2.shape[-2]
     return np.prod([
