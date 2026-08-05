@@ -1,8 +1,6 @@
 import numpy as np
 import scipy.linalg as la
-import ot
-
-from itertools import starmap
+T0s
 
 def dist(dZ):
     return np.abs(dZ)
